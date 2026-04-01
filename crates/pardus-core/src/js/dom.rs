@@ -1,8 +1,50 @@
+use scraper::{ElementRef, Html, Selector};
 use std::collections::HashMap;
-use scraper::{Html, Selector, ElementRef};
 
 /// Unique ID for a DOM node.
 pub type NodeId = u32;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MutationRecord {
+    pub type_: String,
+    pub target: u32,
+    pub added_nodes: Vec<u32>,
+    pub removed_nodes: Vec<u32>,
+    pub attribute_name: Option<String>,
+    pub old_value: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObserverEntry {
+    pub id: u32,
+    pub target_node_id: u32,
+    pub options: MutationObserverInit,
+}
+
+#[derive(Debug, Clone)]
+pub struct MutationObserverInit {
+    pub child_list: bool,
+    pub attributes: bool,
+    pub character_data: bool,
+    pub subtree: bool,
+    pub attribute_old_value: bool,
+    pub character_data_old_value: bool,
+    pub attribute_filter: Vec<String>,
+}
+
+impl Default for MutationObserverInit {
+    fn default() -> Self {
+        Self {
+            child_list: false,
+            attributes: true,
+            character_data: false,
+            subtree: false,
+            attribute_old_value: false,
+            character_data_old_value: false,
+            attribute_filter: Vec::new(),
+        }
+    }
+}
 
 /// A minimal DOM document backed by a flat HashMap.
 #[derive(Debug)]
@@ -12,6 +54,15 @@ pub struct DomDocument {
     document_element_id: NodeId,
     head_id: NodeId,
     body_id: NodeId,
+    id_index: HashMap<String, NodeId>,
+    tag_index: HashMap<String, Vec<NodeId>>,
+    class_index: HashMap<String, Vec<NodeId>>,
+    title: Option<String>,
+    #[allow(dead_code)]
+    original_html: String,
+    mutation_records: Vec<MutationRecord>,
+    observers: Vec<ObserverEntry>,
+    next_observer_id: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +71,7 @@ pub enum DomNodeType {
     Text,
     Document,
     DocumentFragment,
+    Comment,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +95,14 @@ impl DomDocument {
             document_element_id: 0,
             head_id: 0,
             body_id: 0,
+            id_index: HashMap::new(),
+            tag_index: HashMap::new(),
+            class_index: HashMap::new(),
+            title: None,
+            original_html: html.to_string(),
+            mutation_records: Vec::new(),
+            observers: Vec::new(),
+            next_observer_id: 1,
         };
 
         // Create document root
@@ -63,11 +123,28 @@ impl DomDocument {
                     }
                 }
             }
+
+            // Extract title from head > title
+            if doc.head_id != 0 {
+                if let Some(head_node) = doc.nodes.get(&doc.head_id) {
+                    for &child_id in &head_node.children {
+                        if let Some(child) = doc.nodes.get(&child_id) {
+                            if child.tag_name.as_deref() == Some("title") {
+                                doc.title = Some(doc.get_text_content(child_id));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         } else if let Some(body_el) = parsed.select(&Selector::parse("body").unwrap()).next() {
             let body_id = doc.build_from_scraper(&body_el, None);
             doc.body_id = body_id;
             doc.document_element_id = body_id;
         }
+
+        // Build indexes for all existing element nodes
+        doc.rebuild_indexes_for_subtree(doc.document_element_id);
 
         doc
     }
@@ -75,45 +152,72 @@ impl DomDocument {
     fn alloc_node(&mut self, node_type: DomNodeType, parent_id: Option<NodeId>) -> NodeId {
         let id = self.next_id;
         self.next_id += 1;
-        self.nodes.insert(id, DomNode {
+        self.nodes.insert(
             id,
-            node_type,
-            tag_name: None,
-            attributes: HashMap::new(),
-            children: Vec::new(),
-            parent_id,
-            text_content: None,
-        });
+            DomNode {
+                id,
+                node_type,
+                tag_name: None,
+                attributes: HashMap::new(),
+                children: Vec::new(),
+                parent_id,
+                text_content: None,
+            },
+        );
         id
     }
 
     fn alloc_element(&mut self, tag: &str, parent_id: Option<NodeId>) -> NodeId {
         let id = self.next_id;
         self.next_id += 1;
-        self.nodes.insert(id, DomNode {
+        self.nodes.insert(
             id,
-            node_type: DomNodeType::Element,
-            tag_name: Some(tag.to_lowercase()),
-            attributes: HashMap::new(),
-            children: Vec::new(),
-            parent_id,
-            text_content: None,
-        });
+            DomNode {
+                id,
+                node_type: DomNodeType::Element,
+                tag_name: Some(tag.to_lowercase()),
+                attributes: HashMap::new(),
+                children: Vec::new(),
+                parent_id,
+                text_content: None,
+            },
+        );
         id
     }
 
     fn alloc_text(&mut self, text: &str, parent_id: Option<NodeId>) -> NodeId {
         let id = self.next_id;
         self.next_id += 1;
-        self.nodes.insert(id, DomNode {
+        self.nodes.insert(
             id,
-            node_type: DomNodeType::Text,
-            tag_name: None,
-            attributes: HashMap::new(),
-            children: Vec::new(),
-            parent_id,
-            text_content: Some(text.to_string()),
-        });
+            DomNode {
+                id,
+                node_type: DomNodeType::Text,
+                tag_name: None,
+                attributes: HashMap::new(),
+                children: Vec::new(),
+                parent_id,
+                text_content: Some(text.to_string()),
+            },
+        );
+        id
+    }
+
+    fn alloc_comment(&mut self, text: &str, parent_id: Option<NodeId>) -> NodeId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.nodes.insert(
+            id,
+            DomNode {
+                id,
+                node_type: DomNodeType::Comment,
+                tag_name: None,
+                attributes: HashMap::new(),
+                children: Vec::new(),
+                parent_id,
+                text_content: Some(text.to_string()),
+            },
+        );
         id
     }
 
@@ -124,7 +228,11 @@ impl DomDocument {
 
         // Copy attributes
         for (k, v) in el.value().attrs() {
-            self.nodes.get_mut(&id).unwrap().attributes.insert(k.to_string(), v.to_string());
+            self.nodes
+                .get_mut(&id)
+                .unwrap()
+                .attributes
+                .insert(k.to_string(), v.to_string());
         }
 
         // Walk children — skip script/style subtrees
@@ -137,10 +245,13 @@ impl DomDocument {
                 let child_id = self.build_from_scraper(&child_el, Some(id));
                 self.nodes.get_mut(&id).unwrap().children.push(child_id);
             } else if let Some(text) = child_node.value().as_text() {
-                if !text.text.trim().is_empty() {
+                if !text.text.is_empty() {
                     let text_id = self.alloc_text(&text.text, Some(id));
                     self.nodes.get_mut(&id).unwrap().children.push(text_id);
                 }
+            } else if let Some(comment) = child_node.value().as_comment() {
+                let comment_id = self.alloc_comment(&comment.comment, Some(id));
+                self.nodes.get_mut(&id).unwrap().children.push(comment_id);
             }
         }
 
@@ -149,6 +260,121 @@ impl DomDocument {
         }
 
         id
+    }
+
+    // ---- Index management ----
+
+    fn add_to_indexes(&mut self, node_id: NodeId) {
+        let node = match self.nodes.get(&node_id) {
+            Some(n) => n.clone(),
+            None => return,
+        };
+
+        if node.node_type != DomNodeType::Element {
+            return;
+        }
+
+        if let Some(id_val) = node.attributes.get("id") {
+            if !id_val.is_empty() {
+                self.id_index.insert(id_val.clone(), node_id);
+            }
+        }
+
+        if let Some(tag) = &node.tag_name {
+            self.tag_index.entry(tag.clone()).or_default().push(node_id);
+        }
+
+        if let Some(class_name) = node.attributes.get("class") {
+            for class in class_name.split_whitespace() {
+                self.class_index
+                    .entry(class.to_string())
+                    .or_default()
+                    .push(node_id);
+            }
+        }
+    }
+
+    fn remove_from_indexes(&mut self, node_id: NodeId) {
+        let node = match self.nodes.get(&node_id) {
+            Some(n) => n.clone(),
+            None => return,
+        };
+
+        if node.node_type != DomNodeType::Element {
+            return;
+        }
+
+        if let Some(id_val) = node.attributes.get("id") {
+            if self.id_index.get(id_val) == Some(&node_id) {
+                self.id_index.remove(id_val);
+            }
+        }
+
+        if let Some(tag) = &node.tag_name {
+            if let Some(vec) = self.tag_index.get_mut(tag) {
+                vec.retain(|&id| id != node_id);
+                if vec.is_empty() {
+                    self.tag_index.remove(tag);
+                }
+            }
+        }
+
+        if let Some(class_name) = node.attributes.get("class") {
+            for class in class_name.split_whitespace() {
+                if let Some(vec) = self.class_index.get_mut(class) {
+                    vec.retain(|&id| id != node_id);
+                    if vec.is_empty() {
+                        self.class_index.remove(class);
+                    }
+                }
+            }
+        }
+    }
+
+    fn rebuild_class_index_for_node(&mut self, node_id: NodeId) {
+        let node = match self.nodes.get(&node_id) {
+            Some(n) => n.clone(),
+            None => return,
+        };
+
+        let classes_to_remove: Vec<String> = self
+            .class_index
+            .keys()
+            .filter(|k| {
+                self.class_index
+                    .get(*k)
+                    .map_or(false, |v| v.contains(&node_id))
+            })
+            .cloned()
+            .collect();
+
+        for class in classes_to_remove {
+            if let Some(vec) = self.class_index.get_mut(&class) {
+                vec.retain(|&id| id != node_id);
+                if vec.is_empty() {
+                    self.class_index.remove(&class);
+                }
+            }
+        }
+
+        if let Some(class_name) = node.attributes.get("class") {
+            for class in class_name.split_whitespace() {
+                self.class_index
+                    .entry(class.to_string())
+                    .or_default()
+                    .push(node_id);
+            }
+        }
+    }
+
+    fn rebuild_indexes_for_subtree(&mut self, node_id: NodeId) {
+        self.add_to_indexes(node_id);
+        if let Some(node) = self.nodes.get(&node_id) {
+            let children: Vec<NodeId> = node.children.clone();
+            for child_id in children {
+                self.rebuild_indexes_for_subtree(child_id);
+            }
+        }
     }
 
     // ---- Serialization ----
@@ -173,9 +399,32 @@ impl DomDocument {
                     output.push_str(text);
                 }
             }
+            DomNodeType::Comment => {
+                if let Some(text) = &node.text_content {
+                    output.push_str("<!--");
+                    output.push_str(text);
+                    output.push_str("-->");
+                }
+            }
             DomNodeType::Element => {
                 let tag = node.tag_name.as_deref().unwrap_or("div");
-                let void = matches!(tag, "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr");
+                let void = matches!(
+                    tag,
+                    "area"
+                        | "base"
+                        | "br"
+                        | "col"
+                        | "embed"
+                        | "hr"
+                        | "img"
+                        | "input"
+                        | "link"
+                        | "meta"
+                        | "param"
+                        | "source"
+                        | "track"
+                        | "wbr"
+                );
 
                 output.push('<');
                 output.push_str(tag);
@@ -220,7 +469,6 @@ impl DomDocument {
     }
 
     pub fn append_child(&mut self, parent_id: NodeId, child_id: NodeId) {
-        // Remove from old parent
         if let Some(old_parent) = self.nodes.get(&child_id).and_then(|n| n.parent_id) {
             if let Some(old) = self.nodes.get_mut(&old_parent) {
                 old.children.retain(|&id| id != child_id);
@@ -232,6 +480,7 @@ impl DomDocument {
         if let Some(parent) = self.nodes.get_mut(&parent_id) {
             parent.children.push(child_id);
         }
+        self.queue_mutation("childList", parent_id);
     }
 
     pub fn remove_child(&mut self, parent_id: NodeId, child_id: NodeId) {
@@ -242,6 +491,7 @@ impl DomDocument {
             child.parent_id = None;
         }
         self.remove_recursive(child_id);
+        self.queue_mutation("childList", parent_id);
     }
 
     fn remove_recursive(&mut self, node_id: NodeId) {
@@ -251,29 +501,100 @@ impl DomDocument {
                 self.remove_recursive(cid);
             }
         }
+        self.remove_from_indexes(node_id);
         self.nodes.remove(&node_id);
+    }
+
+    pub fn has_observers(&self) -> bool {
+        !self.observers.is_empty()
+    }
+
+    pub fn queue_mutation(&mut self, type_: &str, target: u32) {
+        if !self.has_observers() {
+            return;
+        }
+        self.mutation_records.push(MutationRecord {
+            type_: type_.to_string(),
+            target,
+            added_nodes: Vec::new(),
+            removed_nodes: Vec::new(),
+            attribute_name: None,
+            old_value: None,
+        });
+    }
+
+    pub fn register_observer(&mut self, target_node_id: u32, options: MutationObserverInit) -> u32 {
+        let id = self.next_observer_id;
+        self.next_observer_id += 1;
+        self.observers.push(ObserverEntry {
+            id,
+            target_node_id,
+            options,
+        });
+        id
+    }
+
+    pub fn disconnect_observer(&mut self, observer_id: u32) {
+        self.observers.retain(|o| o.id != observer_id);
+    }
+
+    pub fn take_mutation_records(&mut self) -> Vec<MutationRecord> {
+        std::mem::take(&mut self.mutation_records)
     }
 
     pub fn set_attribute(&mut self, node_id: NodeId, name: &str, value: &str) {
         if let Some(node) = self.nodes.get_mut(&node_id) {
-            node.attributes.insert(name.to_string(), value.to_string());
+            if name == "id" {
+                if let Some(old_id) = node.attributes.get("id") {
+                    if self.id_index.get(old_id) == Some(&node_id) {
+                        self.id_index.remove(old_id);
+                    }
+                }
+                node.attributes.insert(name.to_string(), value.to_string());
+                if !value.is_empty() {
+                    self.id_index.insert(value.to_string(), node_id);
+                }
+            } else if name == "class" {
+                node.attributes.insert(name.to_string(), value.to_string());
+                self.rebuild_class_index_for_node(node_id);
+            } else {
+                node.attributes.insert(name.to_string(), value.to_string());
+            }
         }
+        self.queue_mutation("attributes", node_id);
     }
 
     pub fn get_attribute(&self, node_id: NodeId, name: &str) -> Option<String> {
-        self.nodes.get(&node_id).and_then(|n| n.attributes.get(name).cloned())
+        self.nodes
+            .get(&node_id)
+            .and_then(|n| n.attributes.get(name).cloned())
     }
 
     pub fn remove_attribute(&mut self, node_id: NodeId, name: &str) {
         if let Some(node) = self.nodes.get_mut(&node_id) {
-            node.attributes.remove(name);
+            if name == "id" {
+                if let Some(old_id) = node.attributes.remove("id") {
+                    if self.id_index.get(&old_id) == Some(&node_id) {
+                        self.id_index.remove(&old_id);
+                    }
+                }
+            } else if name == "class" {
+                node.attributes.remove(name);
+                self.rebuild_class_index_for_node(node_id);
+            } else {
+                node.attributes.remove(name);
+            }
         }
+        self.queue_mutation("attributes", node_id);
     }
 
     pub fn set_inner_html(&mut self, node_id: NodeId, html: &str) {
-        // Remove existing children
-        let old_children: Vec<NodeId> = self.nodes.get(&node_id)
-            .map(|n| n.children.clone()).unwrap_or_default();
+        // Remove existing children (indexes updated in remove_recursive)
+        let old_children: Vec<NodeId> = self
+            .nodes
+            .get(&node_id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
         for old_id in old_children {
             self.remove_recursive(old_id);
         }
@@ -284,8 +605,8 @@ impl DomDocument {
         let fragment = Html::parse_fragment(html);
         for node_ref in fragment.tree.nodes() {
             if let Some(el) = ElementRef::wrap(node_ref) {
-                let _child_id = self.build_from_scraper(&el, Some(node_id));
-                // build_from_scraper already adds to parent
+                let child_id = self.build_from_scraper(&el, Some(node_id));
+                self.rebuild_indexes_for_subtree(child_id);
             } else if let Some(text) = node_ref.value().as_text() {
                 if !text.text.trim().is_empty() {
                     let text_id = self.alloc_text(&text.text, Some(node_id));
@@ -295,6 +616,7 @@ impl DomDocument {
                 }
             }
         }
+        self.queue_mutation("childList", node_id);
     }
 
     pub fn get_inner_html(&self, node_id: NodeId) -> String {
@@ -313,7 +635,9 @@ impl DomDocument {
             None => return String::new(),
         };
         match node.node_type {
-            DomNodeType::Text => node.text_content.clone().unwrap_or_default(),
+            DomNodeType::Text | DomNodeType::Comment => {
+                node.text_content.clone().unwrap_or_default()
+            }
             _ => {
                 let mut text = String::new();
                 for &child_id in &node.children {
@@ -325,8 +649,12 @@ impl DomDocument {
     }
 
     pub fn set_text_content(&mut self, node_id: NodeId, text: &str) {
-        let old_children: Vec<NodeId> = self.nodes.get(&node_id)
-            .map(|n| n.children.clone()).unwrap_or_default();
+        // Remove old children (indexes updated in remove_recursive)
+        let old_children: Vec<NodeId> = self
+            .nodes
+            .get(&node_id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
         for old_id in old_children {
             self.remove_recursive(old_id);
         }
@@ -337,17 +665,11 @@ impl DomDocument {
         if let Some(node) = self.nodes.get_mut(&node_id) {
             node.children.push(text_id);
         }
+        self.queue_mutation("characterData", node_id);
     }
 
     pub fn get_element_by_id(&self, id: &str) -> Option<NodeId> {
-        for (&node_id, node) in &self.nodes {
-            if let Some(attr_id) = node.attributes.get("id") {
-                if attr_id == id {
-                    return Some(node_id);
-                }
-            }
-        }
-        None
+        self.id_index.get(id).copied()
     }
 
     pub fn get_parent(&self, node_id: NodeId) -> Option<NodeId> {
@@ -356,16 +678,25 @@ impl DomDocument {
 
     // ---- Accessors ----
 
-    pub fn document_element(&self) -> NodeId { self.document_element_id }
-    pub fn head(&self) -> NodeId { self.head_id }
-    pub fn body(&self) -> NodeId { self.body_id }
+    pub fn document_element(&self) -> NodeId {
+        self.document_element_id
+    }
+    pub fn head(&self) -> NodeId {
+        self.head_id
+    }
+    pub fn body(&self) -> NodeId {
+        self.body_id
+    }
 
     pub fn get_tag_name(&self, node_id: NodeId) -> Option<String> {
         self.nodes.get(&node_id).and_then(|n| n.tag_name.clone())
     }
 
     pub fn get_children(&self, node_id: NodeId) -> Vec<NodeId> {
-        self.nodes.get(&node_id).map(|n| n.children.clone()).unwrap_or_default()
+        self.nodes
+            .get(&node_id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default()
     }
 
     pub fn get_class_name(&self, node_id: NodeId) -> String {
@@ -401,12 +732,100 @@ impl DomDocument {
             node_id
         };
 
+        let s = selector.trim();
+
+        // Fast path: #id
+        if let Some(id) = s.strip_prefix('#') {
+            if let Some(&nid) = self.id_index.get(id) {
+                if self.is_descendant_or_self(nid, start_node) {
+                    return Some(nid);
+                }
+            }
+            return None;
+        }
+
+        // Fast path: .class
+        if let Some(class) = s.strip_prefix('.') {
+            if let Some(ids) = self.class_index.get(class) {
+                for &nid in ids {
+                    if self.is_descendant_or_self(nid, start_node) {
+                        return Some(nid);
+                    }
+                }
+            }
+            return None;
+        }
+
+        // Fast path: tag or tag.class
+        if !s.is_empty() && s.chars().next().map_or(false, |c| c.is_alphabetic()) {
+            if let Some(dot_pos) = s.find('.') {
+                let tag = s[..dot_pos].to_lowercase();
+                let class = &s[dot_pos + 1..];
+                if let Some(tag_ids) = self.tag_index.get(&tag) {
+                    if let Some(class_ids) = self.class_index.get(class) {
+                        let class_set: std::collections::HashSet<NodeId> =
+                            class_ids.iter().copied().collect();
+                        for &nid in tag_ids {
+                            if class_set.contains(&nid)
+                                && self.is_descendant_or_self(nid, start_node)
+                            {
+                                return Some(nid);
+                            }
+                        }
+                    }
+                }
+                // Fall through to selector parsing
+            } else if s.chars().all(|c| c.is_alphanumeric() || c == '-') {
+                let tag = s.to_lowercase();
+                let mut result = None;
+                self.find_element_by_tag(start_node, &tag, &mut result);
+                return result;
+            }
+        }
+
         let css_selector = match Selector::parse(selector) {
             Ok(s) => s,
             Err(_) => return None,
         };
 
         self.query_selector_recursive(start_node, &css_selector)
+    }
+
+    fn find_element_by_tag(&self, node_id: NodeId, tag: &str, result: &mut Option<NodeId>) {
+        if result.is_some() {
+            return;
+        }
+        let node = match self.nodes.get(&node_id) {
+            Some(n) => n,
+            None => return,
+        };
+        if node.node_type == DomNodeType::Element {
+            if node.tag_name.as_deref() == Some(tag) {
+                *result = Some(node_id);
+                return;
+            }
+        }
+        for &child_id in &node.children {
+            self.find_element_by_tag(child_id, tag, result);
+            if result.is_some() {
+                return;
+            }
+        }
+    }
+
+    fn is_descendant_or_self(&self, node_id: NodeId, root_id: NodeId) -> bool {
+        if node_id == root_id {
+            return true;
+        }
+        let mut current = node_id;
+        while let Some(node) = self.nodes.get(&current) {
+            match node.parent_id {
+                Some(pid) if pid == root_id => return true,
+                Some(pid) => current = pid,
+                None => return false,
+            }
+        }
+        false
     }
 
     fn query_selector_recursive(&self, node_id: NodeId, selector: &Selector) -> Option<NodeId> {
@@ -438,6 +857,61 @@ impl DomDocument {
             node_id
         };
 
+        let s = selector.trim();
+
+        // Fast path: #id
+        if let Some(id) = s.strip_prefix('#') {
+            if let Some(&nid) = self.id_index.get(id) {
+                if self.is_descendant_or_self(nid, start_node) {
+                    return vec![nid];
+                }
+            }
+            return Vec::new();
+        }
+
+        // Fast path: .class
+        if let Some(class) = s.strip_prefix('.') {
+            if let Some(ids) = self.class_index.get(class) {
+                let mut results: Vec<NodeId> = ids
+                    .iter()
+                    .filter(|&&nid| self.is_descendant_or_self(nid, start_node))
+                    .copied()
+                    .collect();
+                results.sort();
+                return results;
+            }
+            return Vec::new();
+        }
+
+        // Fast path: tag or tag.class
+        if !s.is_empty() && s.chars().next().map_or(false, |c| c.is_alphabetic()) {
+            if let Some(dot_pos) = s.find('.') {
+                let tag = s[..dot_pos].to_lowercase();
+                let class = &s[dot_pos + 1..];
+                if let Some(tag_ids) = self.tag_index.get(&tag) {
+                    if let Some(class_ids) = self.class_index.get(class) {
+                        let class_set: std::collections::HashSet<NodeId> =
+                            class_ids.iter().copied().collect();
+                        let mut results: Vec<NodeId> = tag_ids
+                            .iter()
+                            .filter(|&&nid| {
+                                class_set.contains(&nid)
+                                    && self.is_descendant_or_self(nid, start_node)
+                            })
+                            .copied()
+                            .collect();
+                        results.sort();
+                        return results;
+                    }
+                }
+            } else if s.chars().all(|c| c.is_alphanumeric() || c == '-') {
+                let tag = s.to_lowercase();
+                let mut results = Vec::new();
+                self.collect_elements_by_tag(start_node, &tag, &mut results);
+                return results;
+            }
+        }
+
         let css_selector = match Selector::parse(selector) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
@@ -448,7 +922,27 @@ impl DomDocument {
         results
     }
 
-    fn query_selector_all_recursive(&self, node_id: NodeId, selector: &Selector, results: &mut Vec<NodeId>) {
+    fn collect_elements_by_tag(&self, node_id: NodeId, tag: &str, results: &mut Vec<NodeId>) {
+        let node = match self.nodes.get(&node_id) {
+            Some(n) => n,
+            None => return,
+        };
+        if node.node_type == DomNodeType::Element {
+            if node.tag_name.as_deref() == Some(tag) {
+                results.push(node_id);
+            }
+        }
+        for &child_id in &node.children {
+            self.collect_elements_by_tag(child_id, tag, results);
+        }
+    }
+
+    fn query_selector_all_recursive(
+        &self,
+        node_id: NodeId,
+        selector: &Selector,
+        results: &mut Vec<NodeId>,
+    ) {
         let node = match self.nodes.get(&node_id) {
             Some(n) => n,
             None => return,
@@ -487,7 +981,9 @@ impl DomDocument {
         let doc = Html::parse_fragment(&html);
         if let Some(el) = doc.select(selector).next() {
             // Verify it's the same element by checking a data attribute we add
-            return el.value().attr("data-pardus-node-id")
+            return el
+                .value()
+                .attr("data-pardus-node-id")
                 .map(|s| s == node_id.to_string())
                 .unwrap_or(false);
         }
@@ -519,7 +1015,12 @@ impl DomDocument {
     // ---- Extended Element API ----
 
     /// Insert a node before a reference node
-    pub fn insert_before(&mut self, parent_id: NodeId, new_node_id: NodeId, ref_node_id: Option<NodeId>) {
+    pub fn insert_before(
+        &mut self,
+        parent_id: NodeId,
+        new_node_id: NodeId,
+        ref_node_id: Option<NodeId>,
+    ) {
         // Remove from old parent
         if let Some(old_parent) = self.nodes.get(&new_node_id).and_then(|n| n.parent_id) {
             if let Some(old) = self.nodes.get_mut(&old_parent) {
@@ -547,6 +1048,7 @@ impl DomDocument {
                 }
             }
         }
+        self.queue_mutation("childList", parent_id);
     }
 
     /// Replace a child node with another
@@ -575,6 +1077,7 @@ impl DomDocument {
             old_child.parent_id = None;
         }
         self.remove_recursive(old_child_id);
+        self.queue_mutation("childList", parent_id);
     }
 
     /// Clone a node
@@ -582,7 +1085,12 @@ impl DomDocument {
         self.clone_node_internal(node_id, None, deep)
     }
 
-    fn clone_node_internal(&mut self, node_id: NodeId, parent_id: Option<NodeId>, deep: bool) -> NodeId {
+    fn clone_node_internal(
+        &mut self,
+        node_id: NodeId,
+        parent_id: Option<NodeId>,
+        deep: bool,
+    ) -> NodeId {
         let node = match self.nodes.get(&node_id) {
             Some(n) => n.clone(),
             None => return 0,
@@ -594,6 +1102,14 @@ impl DomDocument {
             new_node.tag_name = node.tag_name;
             new_node.attributes = node.attributes;
             new_node.text_content = node.text_content;
+        }
+
+        if self
+            .nodes
+            .get(&new_id)
+            .map_or(false, |n| n.node_type == DomNodeType::Element)
+        {
+            self.add_to_indexes(new_id);
         }
 
         if deep {
@@ -611,7 +1127,7 @@ impl DomDocument {
     /// Check if a node contains another node
     pub fn contains(&self, container_id: NodeId, contained_id: NodeId) -> bool {
         if container_id == contained_id {
-            return false;
+            return true;
         }
 
         let mut current_id = contained_id;
@@ -627,12 +1143,18 @@ impl DomDocument {
 
     /// Check if node has child nodes
     pub fn has_child_nodes(&self, node_id: NodeId) -> bool {
-        self.nodes.get(&node_id).map(|n| !n.children.is_empty()).unwrap_or(false)
+        self.nodes
+            .get(&node_id)
+            .map(|n| !n.children.is_empty())
+            .unwrap_or(false)
     }
 
     /// Check if node has attributes
     pub fn has_attributes(&self, node_id: NodeId) -> bool {
-        self.nodes.get(&node_id).map(|n| !n.attributes.is_empty()).unwrap_or(false)
+        self.nodes
+            .get(&node_id)
+            .map(|n| !n.attributes.is_empty())
+            .unwrap_or(false)
     }
 
     /// Get previous sibling
@@ -649,39 +1171,258 @@ impl DomDocument {
 
     /// Get node type as number (matches DOM Node.ELEMENT_NODE, etc.)
     pub fn get_node_type(&self, node_id: NodeId) -> u16 {
-        self.nodes.get(&node_id).map(|n| match n.node_type {
-            DomNodeType::Element => 1,
-            DomNodeType::Text => 3,
-            DomNodeType::Document => 9,
-            DomNodeType::DocumentFragment => 11,
-        }).unwrap_or(0)
+        self.nodes
+            .get(&node_id)
+            .map(|n| match n.node_type {
+                DomNodeType::Element => 1,
+                DomNodeType::Text => 3,
+                DomNodeType::Comment => 8,
+                DomNodeType::Document => 9,
+                DomNodeType::DocumentFragment => 11,
+            })
+            .unwrap_or(0)
     }
 
     /// Get node name (tagName for elements, #text for text nodes, etc.)
     pub fn get_node_name(&self, node_id: NodeId) -> String {
-        self.nodes.get(&node_id).map(|n| match &n.node_type {
-            DomNodeType::Element => n.tag_name.clone().unwrap_or_default().to_uppercase(),
-            DomNodeType::Text => "#text".to_string(),
-            DomNodeType::Document => "#document".to_string(),
-            DomNodeType::DocumentFragment => "#document-fragment".to_string(),
-        }).unwrap_or_default()
+        self.nodes
+            .get(&node_id)
+            .map(|n| match &n.node_type {
+                DomNodeType::Element => n.tag_name.clone().unwrap_or_default().to_uppercase(),
+                DomNodeType::Text => "#text".to_string(),
+                DomNodeType::Comment => "#comment".to_string(),
+                DomNodeType::Document => "#document".to_string(),
+                DomNodeType::DocumentFragment => "#document-fragment".to_string(),
+            })
+            .unwrap_or_default()
     }
 
     /// Get all attribute names
     pub fn get_attribute_names(&self, node_id: NodeId) -> Vec<String> {
-        self.nodes.get(&node_id)
+        self.nodes
+            .get(&node_id)
             .map(|n| n.attributes.keys().cloned().collect())
             .unwrap_or_default()
+    }
+
+    // ---- Outer HTML ----
+
+    pub fn get_outer_html(&self, node_id: NodeId) -> String {
+        let mut output = String::new();
+        self.serialize_node(node_id, &mut output);
+        output
+    }
+
+    // ---- getElementsByTagName ----
+
+    pub fn get_elements_by_tag_name(&self, node_id: NodeId, tag: &str) -> Vec<NodeId> {
+        let tag_lower = tag.to_lowercase();
+        let all_elements = self.collect_all_elements(node_id);
+        if tag_lower == "*" {
+            all_elements
+        } else {
+            all_elements
+                .into_iter()
+                .filter(|&nid| {
+                    self.nodes
+                        .get(&nid)
+                        .and_then(|n| n.tag_name.as_deref())
+                        .map_or(false, |t| t == tag_lower)
+                })
+                .collect()
+        }
+    }
+
+    // ---- getElementsByClassName ----
+
+    pub fn get_elements_by_class_name(&self, node_id: NodeId, class_name: &str) -> Vec<NodeId> {
+        let target_classes: std::collections::HashSet<&str> =
+            class_name.split_whitespace().collect();
+        if target_classes.is_empty() {
+            return Vec::new();
+        }
+        self.collect_all_elements(node_id)
+            .into_iter()
+            .filter(|&nid| {
+                self.nodes
+                    .get(&nid)
+                    .and_then(|n| n.attributes.get("class"))
+                    .map_or(false, |cls| {
+                        let classes: std::collections::HashSet<&str> =
+                            cls.split_whitespace().collect();
+                        target_classes.iter().all(|c| classes.contains(*c))
+                    })
+            })
+            .collect()
+    }
+
+    // ---- Element traversal ----
+
+    pub fn first_element_child(&self, node_id: NodeId) -> Option<NodeId> {
+        let node = self.nodes.get(&node_id)?;
+        node.children
+            .iter()
+            .find(|&&cid| {
+                self.nodes
+                    .get(&cid)
+                    .map_or(false, |n| n.node_type == DomNodeType::Element)
+            })
+            .copied()
+    }
+
+    pub fn last_element_child(&self, node_id: NodeId) -> Option<NodeId> {
+        let node = self.nodes.get(&node_id)?;
+        node.children
+            .iter()
+            .rev()
+            .find(|&&cid| {
+                self.nodes
+                    .get(&cid)
+                    .map_or(false, |n| n.node_type == DomNodeType::Element)
+            })
+            .copied()
+    }
+
+    pub fn next_element_sibling(&self, node_id: NodeId) -> Option<NodeId> {
+        let parent_id = self.nodes.get(&node_id)?.parent_id?;
+        let parent = self.nodes.get(&parent_id)?;
+        let idx = parent.children.iter().position(|&id| id == node_id)?;
+        for i in (idx + 1)..parent.children.len() {
+            let cid = parent.children[i];
+            if self
+                .nodes
+                .get(&cid)
+                .map_or(false, |n| n.node_type == DomNodeType::Element)
+            {
+                return Some(cid);
+            }
+        }
+        None
+    }
+
+    pub fn previous_element_sibling(&self, node_id: NodeId) -> Option<NodeId> {
+        let parent_id = self.nodes.get(&node_id)?.parent_id?;
+        let parent = self.nodes.get(&parent_id)?;
+        let idx = parent.children.iter().position(|&id| id == node_id)?;
+        if idx == 0 {
+            return None;
+        }
+        for i in (0..idx).rev() {
+            let cid = parent.children[i];
+            if self
+                .nodes
+                .get(&cid)
+                .map_or(false, |n| n.node_type == DomNodeType::Element)
+            {
+                return Some(cid);
+            }
+        }
+        None
+    }
+
+    // ---- Title ----
+
+    pub fn get_title(&self) -> String {
+        self.title.clone().unwrap_or_default()
+    }
+
+    pub fn set_title(&mut self, title: &str) -> String {
+        let old = self.title.clone().unwrap_or_default();
+        self.title = Some(title.to_string());
+
+        if self.head_id != 0 {
+            let mut title_node_id: Option<NodeId> = None;
+            if let Some(head_node) = self.nodes.get(&self.head_id) {
+                for &child_id in &head_node.children {
+                    if let Some(child) = self.nodes.get(&child_id) {
+                        if child.tag_name.as_deref() == Some("title") {
+                            title_node_id = Some(child_id);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if let Some(tid) = title_node_id {
+                let old_children: Vec<NodeId> = self
+                    .nodes
+                    .get(&tid)
+                    .map(|n| n.children.clone())
+                    .unwrap_or_default();
+                for old_id in old_children {
+                    self.remove_recursive(old_id);
+                }
+                if let Some(title_node) = self.nodes.get_mut(&tid) {
+                    title_node.children.clear();
+                }
+                let text_id = self.alloc_text(title, Some(tid));
+                if let Some(title_node) = self.nodes.get_mut(&tid) {
+                    title_node.children.push(text_id);
+                }
+            } else {
+                let title_el = self.alloc_element("title", Some(self.head_id));
+                let text_id = self.alloc_text(title, Some(title_el));
+                if let Some(title_node) = self.nodes.get_mut(&title_el) {
+                    title_node.children.push(text_id);
+                }
+                if let Some(head_node) = self.nodes.get_mut(&self.head_id) {
+                    head_node.children.push(title_el);
+                }
+            }
+        }
+
+        old
+    }
+
+    // ---- Helper methods ----
+
+    fn filter_descendants(
+        &self,
+        node_id: NodeId,
+        predicate: impl Fn(NodeId) -> bool,
+    ) -> Vec<NodeId> {
+        let mut results = Vec::new();
+        self.filter_descendants_recursive(node_id, &predicate, &mut results);
+        results
+    }
+
+    fn filter_descendants_recursive(
+        &self,
+        node_id: NodeId,
+        predicate: &dyn Fn(NodeId) -> bool,
+        results: &mut Vec<NodeId>,
+    ) {
+        let node = match self.nodes.get(&node_id) {
+            Some(n) => n,
+            None => return,
+        };
+        for &child_id in &node.children {
+            if predicate(child_id) {
+                results.push(child_id);
+            }
+            self.filter_descendants_recursive(child_id, predicate, results);
+        }
+    }
+
+    fn collect_all_elements(&self, node_id: NodeId) -> Vec<NodeId> {
+        self.filter_descendants(node_id, |nid| {
+            self.nodes
+                .get(&nid)
+                .map_or(false, |n| n.node_type == DomNodeType::Element)
+        })
     }
 }
 
 fn format_style_property(existing: &str, property: &str, value: &str) -> String {
     let target = format!("{}:", property);
     let mut found = false;
-    let parts: Vec<String> = existing.split(';')
+    let parts: Vec<String> = existing
+        .split(';')
         .filter_map(|p| {
             let p = p.trim();
-            if p.is_empty() { return None; }
+            if p.is_empty() {
+                return None;
+            }
             if p.starts_with(&target) {
                 found = true;
                 Some(format!("{}: {}", property, value))
@@ -692,7 +1433,9 @@ fn format_style_property(existing: &str, property: &str, value: &str) -> String 
         .collect();
     let mut result = parts.join("; ");
     if !found {
-        if !result.is_empty() { result.push_str("; "); }
+        if !result.is_empty() {
+            result.push_str("; ");
+        }
         result.push_str(&format!("{}: {}", property, value));
     }
     result
@@ -704,7 +1447,8 @@ mod tests {
 
     #[test]
     fn test_round_trip() {
-        let html = "<html><head></head><body><h1>Hello</h1><p class=\"intro\">World</p></body></html>";
+        let html =
+            "<html><head></head><body><h1>Hello</h1><p class=\"intro\">World</p></body></html>";
         let doc = DomDocument::from_html(html);
         let output = doc.to_html();
         assert!(output.contains("<h1>"));
@@ -968,7 +1712,8 @@ mod tests {
 
     #[test]
     fn test_get_attribute_names() {
-        let html = "<html><body><div id=\"test\" class=\"foo\" data-value=\"bar\"></div></body></html>";
+        let html =
+            "<html><body><div id=\"test\" class=\"foo\" data-value=\"bar\"></div></body></html>";
         let doc = DomDocument::from_html(html);
         let elem = doc.get_element_by_id("test").unwrap();
         let names = doc.get_attribute_names(elem);
@@ -1003,5 +1748,204 @@ mod tests {
         let style = doc.get_attribute(elem, "style").unwrap();
         assert!(style.contains("color: red"));
         assert!(!style.contains("blue"));
+    }
+
+    // ==================== New Feature Tests ====================
+
+    #[test]
+    fn test_comment_node_type() {
+        let html = "<html><body><!-- a comment --><div>text</div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let body = doc.body();
+        let children = doc.get_children(body);
+        let comment_id = children[0];
+        assert_eq!(doc.get_node_type(comment_id), 8);
+        assert_eq!(doc.get_node_name(comment_id), "#comment");
+    }
+
+    #[test]
+    fn test_comment_serialization() {
+        let html = "<html><body><!-- hello --><div>text</div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let output = doc.to_html();
+        assert!(output.contains("<!-- hello -->"));
+    }
+
+    #[test]
+    fn test_outer_html() {
+        let html = "<html><body><div id=\"outer\"><span>inner</span></div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let outer = doc.get_element_by_id("outer").unwrap();
+        let outer_html = doc.get_outer_html(outer);
+        assert!(outer_html.starts_with("<div id=\"outer\">"));
+        assert!(outer_html.contains("<span>inner</span>"));
+        assert!(outer_html.ends_with("</div>"));
+    }
+
+    #[test]
+    fn test_outer_html_void_element() {
+        let html = "<html><body><br></body></html>";
+        let doc = DomDocument::from_html(html);
+        let results = doc.query_selector_all(0, "br");
+        assert!(!results.is_empty());
+        let outer_html = doc.get_outer_html(results[0]);
+        assert_eq!(outer_html, "<br>");
+    }
+
+    #[test]
+    fn test_get_elements_by_tag_name() {
+        let html = "<html><body><div><span>a</span><span>b</span><p>c</p></div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let div = doc.query_selector(0, "div").unwrap();
+        let spans = doc.get_elements_by_tag_name(div, "span");
+        assert_eq!(spans.len(), 2);
+        let ps = doc.get_elements_by_tag_name(div, "p");
+        assert_eq!(ps.len(), 1);
+    }
+
+    #[test]
+    fn test_get_elements_by_tag_name_star() {
+        let html = "<html><body><div><span>a</span><p>b</p></div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let div = doc.query_selector(0, "div").unwrap();
+        let all = doc.get_elements_by_tag_name(div, "*");
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_get_elements_by_class_name() {
+        let html = "<html><body><div><span class=\"foo\">a</span><span class=\"foo bar\">b</span><p class=\"bar\">c</p></div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let div = doc.query_selector(0, "div").unwrap();
+        let foos = doc.get_elements_by_class_name(div, "foo");
+        assert_eq!(foos.len(), 2);
+        let bars = doc.get_elements_by_class_name(div, "bar");
+        assert_eq!(bars.len(), 2);
+        let both = doc.get_elements_by_class_name(div, "foo bar");
+        assert_eq!(both.len(), 1);
+    }
+
+    #[test]
+    fn test_first_element_child() {
+        let html = "<html><body><div id=\"parent\">text<span id=\"first\">a</span><span id=\"second\">b</span></div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let parent = doc.get_element_by_id("parent").unwrap();
+        let first = doc.first_element_child(parent).unwrap();
+        assert_eq!(doc.get_node_id_attr(first), "first");
+    }
+
+    #[test]
+    fn test_last_element_child() {
+        let html = "<html><body><div id=\"parent\"><span id=\"first\">a</span><span id=\"second\">b</span>text</div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let parent = doc.get_element_by_id("parent").unwrap();
+        let last = doc.last_element_child(parent).unwrap();
+        assert_eq!(doc.get_node_id_attr(last), "second");
+    }
+
+    #[test]
+    fn test_next_element_sibling() {
+        let html = "<html><body><span id=\"a\">a</span>text<span id=\"b\">b</span></body></html>";
+        let doc = DomDocument::from_html(html);
+        let a = doc.get_element_by_id("a").unwrap();
+        let b = doc.next_element_sibling(a).unwrap();
+        assert_eq!(doc.get_node_id_attr(b), "b");
+    }
+
+    #[test]
+    fn test_previous_element_sibling() {
+        let html = "<html><body><span id=\"a\">a</span>text<span id=\"b\">b</span></body></html>";
+        let doc = DomDocument::from_html(html);
+        let b = doc.get_element_by_id("b").unwrap();
+        let a = doc.previous_element_sibling(b).unwrap();
+        assert_eq!(doc.get_node_id_attr(a), "a");
+    }
+
+    #[test]
+    fn test_get_title() {
+        let html = "<html><head><title>My Page</title></head><body></body></html>";
+        let doc = DomDocument::from_html(html);
+        assert_eq!(doc.get_title(), "My Page");
+    }
+
+    #[test]
+    fn test_set_title() {
+        let html = "<html><head><title>Old Title</title></head><body></body></html>";
+        let mut doc = DomDocument::from_html(html);
+        let old = doc.set_title("New Title");
+        assert_eq!(old, "Old Title");
+        assert_eq!(doc.get_title(), "New Title");
+    }
+
+    #[test]
+    fn test_set_title_creates_element() {
+        let html = "<html><head></head><body></body></html>";
+        let mut doc = DomDocument::from_html(html);
+        doc.set_title("Inserted Title");
+        assert_eq!(doc.get_title(), "Inserted Title");
+        let title_el = doc.query_selector(doc.head(), "title");
+        assert!(title_el.is_some());
+    }
+
+    #[test]
+    fn test_contains_self() {
+        let html = "<html><body><div id=\"elem\"></div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let elem = doc.get_element_by_id("elem").unwrap();
+        assert!(doc.contains(elem, elem));
+    }
+
+    #[test]
+    fn test_id_index_fast_path() {
+        let html = "<html><body><div id=\"target\">found</div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let found = doc.get_element_by_id("target");
+        assert!(found.is_some());
+        assert_eq!(doc.get_text_content(found.unwrap()), "found");
+    }
+
+    #[test]
+    fn test_set_attribute_updates_id_index() {
+        let html = "<html><body><div id=\"old\">content</div></body></html>";
+        let mut doc = DomDocument::from_html(html);
+        let div = doc.get_element_by_id("old").unwrap();
+        doc.set_attribute(div, "id", "new");
+        assert!(doc.get_element_by_id("old").is_none());
+        assert!(doc.get_element_by_id("new").is_some());
+    }
+
+    #[test]
+    fn test_remove_attribute_updates_id_index() {
+        let html = "<html><body><div id=\"removable\">content</div></body></html>";
+        let mut doc = DomDocument::from_html(html);
+        let div = doc.get_element_by_id("removable").unwrap();
+        doc.remove_attribute(div, "id");
+        assert!(doc.get_element_by_id("removable").is_none());
+    }
+
+    #[test]
+    fn test_set_class_name_updates_index() {
+        let html = "<html><body><div>content</div></body></html>";
+        let mut doc = DomDocument::from_html(html);
+        let div = doc.query_selector(0, "div").unwrap();
+        doc.set_class_name(div, "my-class");
+        let results = doc.get_elements_by_class_name(doc.body(), "my-class");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], div);
+    }
+
+    #[test]
+    fn test_whitespace_preservation_in_build() {
+        let html = "<html><body><div>  spaces  </div></body></html>";
+        let doc = DomDocument::from_html(html);
+        let output = doc.to_html();
+        assert!(output.contains("  spaces  "));
+    }
+
+    #[test]
+    fn test_original_html_stored() {
+        let html = "<html><body><p>original</p></body></html>";
+        let doc = DomDocument::from_html(html);
+        assert!(doc.original_html.contains("original"));
     }
 }

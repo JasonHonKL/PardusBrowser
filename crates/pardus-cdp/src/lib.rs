@@ -1,3 +1,9 @@
-// CDP server — to be implemented in Phase 5
-// This will provide Chrome DevTools Protocol compatibility
-// via WebSocket for Playwright/Puppeteer integration.
+pub mod domain;
+pub mod error;
+pub mod protocol;
+pub mod provider;
+pub mod server;
+pub mod transport;
+
+pub use server::CdpServer;
+pub use provider::{ScreenshotProvider, HttpScreenshotProvider, NoopScreenshotProvider};

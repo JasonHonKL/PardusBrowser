@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Page — Benchmark Baseline</title>
+  <link rel="stylesheet" href="simple.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+</head>
+<body>
+  <header role="banner">
+    <h1>Simple Page</h1>
+    <nav role="navigation" aria-label="Main navigation">
+      <ul>
+        <li><a href="/home">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="/contact">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main role="main">
+    <article role="article">
+      <h2>Article Title</h2>
+      <p>This is a simple page with basic HTML elements. It serves as the baseline for benchmarking — the minimum parse cost for any page.</p>
+      <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.</p>
+      <a href="https://example.com/external">External link to example.com</a>
+    </article>
+
+    <aside role="complementary" aria-label="Sidebar">
+      <h3>Related Links</h3>
+      <ul>
+        <li><a href="/related/1">Related Article 1</a></li>
+        <li><a href="/related/2">Related Article 2</a></li>
+      </ul>
+    </aside>
+  </main>
+
+  <footer role="contentinfo">
+    <p>Benchmark Baseline v1.0</p>
+    <nav aria-label="Footer navigation">
+      <a href="/privacy">Privacy</a> |
+      <a href="/terms">Terms</a> |
+      <a href="/sitemap">Sitemap</a>
+    </nav>
+  </footer>
+</body>
+</html>

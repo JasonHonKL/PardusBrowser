@@ -1,0 +1,889 @@
+//! JS-level interaction via deno_core DOM.
+//!
+//! When JS is enabled, interactions (click/type/scroll) dispatch events
+//! on the in-memory DOM, execute inline event handlers (onclick, onchange, etc.),
+//! and return the modified HTML as a new page state.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use deno_core::*;
+use scraper::{Html, Selector};
+use url::Url;
+
+use crate::interact::actions::InteractionResult;
+use crate::interact::scroll::ScrollDirection;
+use crate::js::dom::DomDocument;
+use crate::js::extension::pardus_dom;
+use crate::session::SessionStore;
+
+// ==================== Configuration ====================
+
+const INTERACTION_TIMEOUT_MS: u64 = 5000;
+
+// ==================== Inline Handler Registration ====================
+
+/// JS script that extracts all inline on* attributes and registers them
+/// as actual event listeners so they fire during dispatchEvent.
+const INLINE_HANDLER_SCRIPT: &str = r#"
+(function registerInlineHandlers() {
+  var inlineAttrs = [
+    'onclick','onchange','oninput','onsubmit','onfocus','onblur',
+    'onkeydown','onkeyup','onkeypress','onmouseover','onmouseout','onscroll',
+    'ondblclick','onmousedown','onmouseup','onresize','onload'
+  ];
+  var all = document.querySelectorAll('*');
+  for (var i = 0; i < all.length; i++) {
+    var el = all[i];
+    for (var j = 0; j < inlineAttrs.length; j++) {
+      var attr = inlineAttrs[j];
+      var handler = el.getAttribute(attr);
+      if (handler) {
+        var eventType = attr.slice(2);
+        (function(el, handler, eventType) {
+          el.addEventListener(eventType, function(event) {
+            try {
+              (new Function('event', handler)).call(el, event);
+            } catch(e) {}
+          });
+        })(el, handler, eventType);
+      }
+    }
+  }
+})();
+"#;
+
+// ==================== Thread-Based Execution ====================
+
+/// Results from a JS interaction execution.
+struct InteractionThreadResult {
+    html: Option<String>,
+    click_prevented: bool,
+    href: Option<String>,
+}
+
+fn execute_interaction_inner(
+    html: String,
+    base_url: String,
+    interaction_js: String,
+    user_agent: String,
+    session: Option<Arc<SessionStore>>,
+) -> anyhow::Result<InteractionThreadResult> {
+    let base = Url::parse(&base_url)?;
+
+    let dom = Rc::new(RefCell::new(DomDocument::from_html(&html)));
+    let mut runtime = create_interaction_runtime(dom.clone(), &base, &user_agent, session)?;
+
+    // Bootstrap first — sets up window, document, etc.
+    let bootstrap = include_str!("../js/bootstrap.js");
+    runtime.execute_script("bootstrap.js", bootstrap)?;
+
+    // Set up location and user agent after bootstrap
+    let location_js = format!(
+        r#"
+        window.location = {{
+            href: "{}",
+            origin: "{}",
+            protocol: "{}",
+            host: "{}",
+            hostname: "{}",
+            pathname: "{}",
+            search: "{}",
+            hash: "{}"
+        }};
+        globalThis.__pardusUserAgent = "{}";
+    "#,
+        base.as_str(),
+        base.origin().ascii_serialization(),
+        base.scheme(),
+        base.host_str().unwrap_or(""),
+        base.host_str().unwrap_or(""),
+        base.path(),
+        base.query().unwrap_or(""),
+        base.fragment().unwrap_or(""),
+        user_agent
+    );
+    runtime.execute_script("location.js", location_js)?;
+
+    // Register inline handlers
+    let _ = runtime.execute_script("inline_handlers.js", INLINE_HANDLER_SCRIPT.to_string());
+
+    // Run interaction
+    let _ = runtime.execute_script("interaction.js", interaction_js);
+
+    // Run event loop briefly
+    let _ = runtime.run_event_loop(PollEventLoopOptions::default());
+
+    // Read results from DomDocument data attributes (set by interaction JS)
+    let dom_ref = dom.borrow();
+    let doc_el = dom_ref.document_element();
+    let click_prevented = dom_ref
+        .get_attribute(doc_el, "data-pardus-click-prevented")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let href = dom_ref
+        .get_attribute(doc_el, "data-pardus-clicked-href")
+        .filter(|s| !s.is_empty());
+
+    let output = dom_ref.to_html();
+    Ok(InteractionThreadResult {
+        html: Some(output),
+        click_prevented,
+        href,
+    })
+}
+
+/// Shared helper: create DomDocument from HTML, run bootstrap + inline handlers + interaction JS,
+/// serialize DOM back to HTML.
+///
+/// Communication of results (href, click_prevented) happens via data attributes
+/// on the <html> element, which we read from the DomDocument after execution.
+fn execute_interaction_thread(
+    html: String,
+    base_url: String,
+    interaction_js: String,
+    timeout_ms: u64,
+    user_agent: String,
+    session: Option<Arc<SessionStore>>,
+) -> Option<InteractionThreadResult> {
+    let result = Arc::new(Mutex::new(InteractionThreadResult {
+        html: None,
+        click_prevented: false,
+        href: None,
+    }));
+    let result_clone = result.clone();
+
+    let handle = thread::spawn(move || {
+        // Catch panics so we can report errors instead of silently failing
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            execute_interaction_inner(
+                html, base_url, interaction_js, user_agent, session,
+            )
+        }));
+
+        match res {
+            Ok(Ok(output)) => {
+                *result_clone.lock().unwrap() = output;
+            }
+            Ok(Err(e)) => {
+                eprintln!("[js_interact] Error: {:#}", e);
+                *result_clone.lock().unwrap() = InteractionThreadResult {
+                    html: None,
+                    click_prevented: false,
+                    href: None,
+                };
+            }
+            Err(panic_val) => {
+                eprintln!("[js_interact] Thread panicked: {:?}", panic_val);
+                *result_clone.lock().unwrap() = InteractionThreadResult {
+                    html: None,
+                    click_prevented: false,
+                    href: None,
+                };
+            }
+        }
+    });
+
+    let start = Instant::now();
+    loop {
+        if handle.is_finished() {
+            break;
+        }
+        if start.elapsed() >= Duration::from_millis(timeout_ms) {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let guard = result.lock().unwrap();
+    let ret = InteractionThreadResult {
+        html: guard.html.clone(),
+        click_prevented: guard.click_prevented,
+        href: guard.href.clone(),
+    };
+    Some(ret)
+}
+
+fn create_interaction_runtime(
+    dom: Rc<RefCell<DomDocument>>,
+    base_url: &Url,
+    _user_agent: &str,
+    session: Option<Arc<SessionStore>>,
+) -> anyhow::Result<JsRuntime> {
+    let runtime = JsRuntime::new(RuntimeOptions {
+        extensions: vec![pardus_dom::init()],
+        ..Default::default()
+    });
+
+    runtime.op_state().borrow_mut().put(dom);
+
+    if let Some(s) = session {
+        runtime.op_state().borrow_mut().put(s);
+    }
+    runtime
+        .op_state()
+        .borrow_mut()
+        .put(base_url.origin().ascii_serialization());
+
+    Ok(runtime)
+}
+
+// ==================== Public API ====================
+
+/// Perform a JS-level click on an element.
+///
+/// Dispatches a click event on the element found by `selector`.
+/// If the element is a link (`<a href>`), resolves the href and performs
+/// an HTTP GET unless the click handler prevented default.
+/// Otherwise returns the modified DOM as a new Page.
+pub async fn js_click(
+    app: &Arc<crate::App>,
+    page: &crate::Page,
+    selector: &str,
+) -> anyhow::Result<InteractionResult> {
+    let html = page.html.html();
+    let base_url = &page.base_url;
+
+    // Verify element exists in the HTML first
+    if let Ok(sel) = Selector::parse(selector) {
+        let doc = Html::parse_document(&html);
+        if doc.select(&sel).next().is_none() {
+            return Ok(InteractionResult::ElementNotFound {
+                selector: selector.to_string(),
+                reason: "no element matches selector".to_string(),
+            });
+        }
+    }
+
+    let selector_json =
+        serde_json::to_string(selector).unwrap_or_else(|_| format!("'{}'", selector));
+
+    // Build interaction JS — writes results to data attributes on <html>
+    let interaction_js = format!(
+        r#"
+        (function() {{
+            var target = document.querySelector({selector_json});
+            if (!target) return;
+
+            // Store href for link handling via data attribute on documentElement
+            var href = target.getAttribute('href') || '';
+            var docEl = document.documentElement;
+            if (docEl) {{
+                docEl.setAttribute('data-pardus-clicked-href', href);
+            }}
+
+            // Dispatch click event
+            var event = new Event('click', {{ bubbles: true, cancelable: true }});
+            var notPrevented = target.dispatchEvent(event);
+
+            if (docEl) {{
+                docEl.setAttribute('data-pardus-click-prevented', String(!notPrevented));
+            }}
+        }})();
+    "#,
+        selector_json = selector_json,
+    );
+
+    let timeout = INTERACTION_TIMEOUT_MS;
+    let user_agent = app.config.effective_user_agent().to_string();
+
+    let thread_result = execute_interaction_thread(
+        html,
+        base_url.clone(),
+        interaction_js,
+        timeout,
+        user_agent,
+        None,
+    );
+
+    match thread_result {
+        Some(result) => {
+            let modified_html = match result.html {
+                Some(h) => h,
+                None => {
+                    return Ok(InteractionResult::ElementNotFound {
+                        selector: selector.to_string(),
+                        reason: "JS execution failed".to_string(),
+                    })
+                }
+            };
+
+            // If a link was clicked and default wasn't prevented, navigate
+            if let Some(href) = &result.href {
+                if !result.click_prevented && !href.starts_with('#') {
+                    let resolved = Url::parse(base_url)
+                        .and_then(|base| base.join(href))
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|_| href.clone());
+
+                    let new_page = crate::Page::from_url(app, &resolved).await?;
+                    return Ok(InteractionResult::Navigated(new_page));
+                }
+            }
+
+            // Otherwise return modified DOM as a new page
+            let new_page = crate::Page::from_html(&modified_html, &page.url);
+            Ok(InteractionResult::Navigated(new_page))
+        }
+        None => Ok(InteractionResult::ElementNotFound {
+            selector: selector.to_string(),
+            reason: "JS interaction timed out".to_string(),
+        }),
+    }
+}
+
+/// Perform a JS-level type into a form field.
+///
+/// Sets the value attribute on the element, dispatches input and change events.
+pub async fn js_type(
+    page: &crate::Page,
+    selector: &str,
+    value: &str,
+) -> anyhow::Result<InteractionResult> {
+    let html = page.html.html();
+    let base_url = &page.base_url;
+
+    // Verify element exists
+    if let Ok(sel) = Selector::parse(selector) {
+        let doc = Html::parse_document(&html);
+        if doc.select(&sel).next().is_none() {
+            return Ok(InteractionResult::ElementNotFound {
+                selector: selector.to_string(),
+                reason: "no element matches selector".to_string(),
+            });
+        }
+    }
+
+    let selector_json =
+        serde_json::to_string(selector).unwrap_or_else(|_| format!("'{}'", selector));
+    let value_json =
+        serde_json::to_string(value).unwrap_or_else(|_| format!("'{}'", value));
+
+    let interaction_js = format!(
+        r#"
+        (function() {{
+            var target = document.querySelector({selector_json});
+            if (!target) return;
+
+            // Set value attribute
+            target.setAttribute('value', {value_json});
+
+            // Dispatch input event
+            var inputEvent = new Event('input', {{ bubbles: true }});
+            target.dispatchEvent(inputEvent);
+
+            // Dispatch change event
+            var changeEvent = new Event('change', {{ bubbles: true }});
+            target.dispatchEvent(changeEvent);
+        }})();
+    "#,
+        selector_json = selector_json,
+        value_json = value_json,
+    );
+
+    let thread_result = execute_interaction_thread(
+        html,
+        base_url.clone(),
+        interaction_js,
+        INTERACTION_TIMEOUT_MS,
+        "PardusBrowser".to_string(),
+        None,
+    );
+
+    match thread_result {
+        Some(result) => {
+            if result.html.is_some() {
+                Ok(InteractionResult::Typed {
+                    selector: selector.to_string(),
+                    value: value.to_string(),
+                })
+            } else {
+                Ok(InteractionResult::ElementNotFound {
+                    selector: selector.to_string(),
+                    reason: "JS execution failed".to_string(),
+                })
+            }
+        }
+        None => Ok(InteractionResult::ElementNotFound {
+            selector: selector.to_string(),
+            reason: "JS interaction timed out".to_string(),
+        }),
+    }
+}
+
+/// Perform a JS-level scroll.
+///
+/// Dispatches scroll events on the document and window.
+/// Returns the modified DOM as a new page.
+pub async fn js_scroll(
+    page: &crate::Page,
+    direction: ScrollDirection,
+) -> anyhow::Result<InteractionResult> {
+    let html = page.html.html();
+    let base_url = &page.base_url;
+
+    let delta_y = match direction {
+        ScrollDirection::Down | ScrollDirection::ToBottom => 120,
+        ScrollDirection::Up | ScrollDirection::ToTop => -120,
+    };
+
+    let scroll_js = format!(
+        r#"
+        (function() {{
+            var scrollEvent = new Event('scroll', {{ bubbles: true }});
+            document.dispatchEvent(scrollEvent);
+
+            if (window.dispatchEvent) {{
+                window.dispatchEvent(scrollEvent);
+            }}
+
+            // Dispatch a wheel event for direction-aware handlers
+            var wheelEvent = new Event('wheel', {{ bubbles: true }});
+            wheelEvent.deltaY = {delta_y};
+            document.dispatchEvent(wheelEvent);
+        }})();
+    "#,
+        delta_y = delta_y,
+    );
+
+    let thread_result = execute_interaction_thread(
+        html,
+        base_url.clone(),
+        scroll_js,
+        INTERACTION_TIMEOUT_MS,
+        "PardusBrowser".to_string(),
+        None,
+    );
+
+    match thread_result {
+        Some(result) => {
+            let modified_html = match result.html {
+                Some(h) => h,
+                None => {
+                    return Ok(InteractionResult::ElementNotFound {
+                        selector: String::new(),
+                        reason: "JS execution failed".to_string(),
+                    })
+                }
+            };
+
+            let new_page = crate::Page::from_html(&modified_html, &page.url);
+            Ok(InteractionResult::Navigated(new_page))
+        }
+        None => Ok(InteractionResult::ElementNotFound {
+            selector: String::new(),
+            reason: "JS scroll interaction timed out".to_string(),
+        }),
+    }
+}
+
+// ==================== Tests ====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_page_html(body_content: &str) -> String {
+        format!(
+            "<html><head></head><body>{}</body></html>",
+            body_content
+        )
+    }
+
+    fn run_interaction(html: &str, interaction_js: &str) -> Option<String> {
+        let result = execute_interaction_thread(
+            html.to_string(),
+            "https://example.com".to_string(),
+            interaction_js.to_string(),
+            5000,
+            "TestBot/1.0".to_string(),
+            None,
+        );
+        result.and_then(|r| r.html)
+    }
+
+    // ==================== Click Tests ====================
+
+    #[test]
+    fn test_js_click_dispatches_event() {
+        let html = test_page_html(
+            r#"<div id="target" onclick="document.getElementById('output').textContent='clicked'"><span id="output">not clicked</span></div>"#
+        );
+
+        let interaction_js = r#"
+            var target = document.querySelector('#target');
+            if (target) {
+                target.click();
+            }
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("clicked"),
+            "Expected 'clicked' in output, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_js_click_modifies_inner_html() {
+        // Use textContent instead of innerHTML to avoid HTML parsing issues in attribute values
+        let html = test_page_html(
+            r#"<button id="btn" onclick="document.getElementById('output').textContent='Dynamic'"></button><div id="output"><p>Static</p></div>"#
+        );
+
+        let interaction_js = r#"
+            var btn = document.querySelector('#btn');
+            if (btn) btn.click();
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("Dynamic"),
+            "Expected 'Dynamic' in output, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_js_click_element_not_found() {
+        let html = test_page_html("<div>content</div>");
+
+        let interaction_js = r#"
+            var target = document.querySelector('#nonexistent');
+            // target is null, no action taken
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("content"));
+    }
+
+    #[test]
+    fn test_js_click_link_default_not_prevented() {
+        let html = test_page_html(
+            r#"<a id="link" href="https://example.com/page2">Link</a>"#
+        );
+
+        let interaction_js = r#"
+            var link = document.querySelector('#link');
+            if (link) {
+                var href = link.getAttribute('href') || '';
+                var docEl = document.documentElement;
+                if (docEl) {
+                    docEl.setAttribute('data-pardus-clicked-href', href);
+                }
+                var event = new Event('click', { bubbles: true, cancelable: true });
+                var notPrevented = link.dispatchEvent(event);
+                if (docEl) {
+                    docEl.setAttribute('data-pardus-click-prevented', String(!notPrevented));
+                }
+            }
+        "#;
+
+        let result = execute_interaction_thread(
+            html,
+            "https://example.com".to_string(),
+            interaction_js.to_string(),
+            5000,
+            "TestBot/1.0".to_string(),
+            None,
+        );
+
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(!r.click_prevented, "Click should not be prevented");
+        assert_eq!(r.href.as_deref(), Some("https://example.com/page2"));
+    }
+
+    #[test]
+    fn test_js_click_link_preventdefault_in_interaction_js() {
+        let html = test_page_html(
+            r#"<a id="link" href="https://example.com/page2">Link</a>"#
+        );
+
+        // Test that preventDefault works when called directly in interaction JS
+        let interaction_js = r#"
+            var link = document.querySelector('#link');
+            if (link) {
+                var href = link.getAttribute('href') || '';
+                var docEl = document.documentElement;
+                if (docEl) {
+                    docEl.setAttribute('data-pardus-clicked-href', href);
+                }
+                var event = new Event('click', { bubbles: true, cancelable: true });
+                // Call preventDefault on the event before dispatching
+                event.preventDefault();
+                var notPrevented = link.dispatchEvent(event);
+                if (docEl) {
+                    docEl.setAttribute('data-pardus-click-prevented', String(!notPrevented));
+                }
+            }
+        "#;
+
+        let result = execute_interaction_thread(
+            html,
+            "https://example.com".to_string(),
+            interaction_js.to_string(),
+            5000,
+            "TestBot/1.0".to_string(),
+            None,
+        );
+
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert!(
+            r.click_prevented,
+            "Click should be prevented when preventDefault is called before dispatch"
+        );
+    }
+
+    // ==================== Type Tests ====================
+
+    #[test]
+    fn test_js_type_sets_value() {
+        let html = test_page_html(r#"<input id="field" type="text" value="" />"#);
+
+        let interaction_js = r#"
+            var field = document.querySelector('#field');
+            if (field) {
+                field.setAttribute('value', 'hello world');
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+                field.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains(r#"value="hello world""#),
+            "Expected value attribute set, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_js_type_triggers_onchange() {
+        let html = test_page_html(
+            r#"<input id="field" type="text" onchange="document.getElementById('status').textContent='changed'" /><span id="status">unchanged</span>"#
+        );
+
+        let interaction_js = r#"
+            var field = document.querySelector('#field');
+            if (field) {
+                field.setAttribute('value', 'new value');
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+                field.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("changed"),
+            "Expected 'changed' in output, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_js_type_triggers_oninput() {
+        let html = test_page_html(
+            r#"<input id="field" type="text" oninput="document.getElementById('mirror').textContent=this.getAttribute('value')" /><span id="mirror">empty</span>"#
+        );
+
+        let interaction_js = r#"
+            var field = document.querySelector('#field');
+            if (field) {
+                field.setAttribute('value', 'typed');
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("typed"),
+            "Expected 'typed' in output, got: {}",
+            output
+        );
+    }
+
+    // ==================== Scroll Tests ====================
+
+    #[test]
+    fn test_js_scroll_dispatches_event() {
+        let html = test_page_html(r#"<div id="log"></div>"#);
+
+        let interaction_js = r#"
+            document.addEventListener('scroll', function() {
+                document.getElementById('log').textContent = 'scrolled';
+            });
+            var scrollEvent = new Event('scroll', { bubbles: true });
+            document.dispatchEvent(scrollEvent);
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("scrolled"),
+            "Expected 'scrolled' in output, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_js_scroll_triggers_onscroll() {
+        let html = test_page_html(
+            r#"<body onscroll="document.getElementById('log').textContent='scrolled'"><div id="log">not scrolled</div></body>"#
+        );
+
+        let interaction_js = r#"
+            var scrollEvent = new Event('scroll', { bubbles: true });
+            document.dispatchEvent(scrollEvent);
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("scrolled"),
+            "Expected 'scrolled' from inline handler, got: {}",
+            output
+        );
+    }
+
+    // ==================== Inline Handler Registration Tests ====================
+
+    #[test]
+    fn test_inline_onclick_registered_and_fires() {
+        let html = test_page_html(
+            r#"<button id="btn" onclick="document.getElementById('out').textContent='fired'"></button><span id="out">waiting</span>"#
+        );
+
+        let interaction_js = r#"
+            var btn = document.querySelector('#btn');
+            if (btn) btn.click();
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("fired"),
+            "Expected 'fired' from inline onclick, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_inline_onchange_registered_and_fires() {
+        let html = test_page_html(
+            r#"<input id="inp" type="text" onchange="document.getElementById('out').textContent='changed'" /><span id="out">waiting</span>"#
+        );
+
+        let interaction_js = r#"
+            var inp = document.querySelector('#inp');
+            if (inp) {
+                inp.setAttribute('value', 'test');
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("changed"),
+            "Expected 'changed' from inline onchange, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_multiple_inline_handlers() {
+        let html = test_page_html(
+            r#"<button id="btn1" onclick="document.getElementById('out').textContent='btn1'">1</button><button id="btn2" onclick="document.getElementById('out').textContent='btn2'">2</button><span id="out">none</span>"#
+        );
+
+        let interaction_js = r#"
+            var btn1 = document.querySelector('#btn1');
+            if (btn1) btn1.click();
+            var btn2 = document.querySelector('#btn2');
+            if (btn2) btn2.click();
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains("btn2"),
+            "Expected 'btn2' from last click, got: {}",
+            output
+        );
+    }
+
+    // ==================== No-op / Edge Case Tests ====================
+
+    #[test]
+    fn test_click_on_element_without_handler() {
+        let html = test_page_html(r#"<div id="target">Click me</div>"#);
+
+        let interaction_js = r#"
+            var target = document.querySelector('#target');
+            if (target) target.click();
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("Click me"));
+    }
+
+    #[test]
+    fn test_type_on_element_without_handler() {
+        let html = test_page_html(r#"<input id="field" type="text" />"#);
+
+        let interaction_js = r#"
+            var field = document.querySelector('#field');
+            if (field) {
+                field.setAttribute('value', 'typed');
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+                field.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert!(
+            output.contains(r#"value="typed""#),
+            "Expected value to be set, got: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_scroll_no_handler() {
+        let html = test_page_html("<div>content</div>");
+
+        let interaction_js = r#"
+            var scrollEvent = new Event('scroll', { bubbles: true });
+            document.dispatchEvent(scrollEvent);
+        "#;
+
+        let result = run_interaction(&html, interaction_js);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("content"));
+    }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "pardus-browser-compare",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Comparison benchmarks for pardus-browser vs headless browsers",
+  "scripts": {
+    "puppeteer": "node puppeteer.mjs",
+    "playwright": "node playwright.mjs",
+    "install-chrome": "npx puppeteer browsers install chrome"
+  },
+  "dependencies": {
+    "puppeteer": "^22.0.0",
+    "playwright": "^1.42.0"
+  }
+}

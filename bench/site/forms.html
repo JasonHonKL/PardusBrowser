@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forms — Various Form Types</title>
+</head>
+<body>
+  <header role="banner">
+    <h1>Forms Benchmark Page</h1>
+    <nav role="navigation" aria-label="Main navigation">
+      <a href="/forms">Forms Home</a>
+      <a href="#login">Login</a>
+      <a href="#register">Register</a>
+      <a href="#search">Search</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
+
+  <main role="main">
+    <!-- Simple GET search form -->
+    <section aria-label="Search form">
+      <h2>Search Form (GET)</h2>
+      <form action="/search" method="GET" role="search">
+        <input type="hidden" name="csrf" value="tok_search_abc123def456">
+        <input type="hidden" name="source" value="header">
+        <label for="q">Search:</label>
+        <input type="search" id="q" name="q" placeholder="Search the site...">
+        <label for="sort">Sort by:</label>
+        <select id="sort" name="sort">
+          <option value="relevance">Relevance</option>
+          <option value="date">Date</option>
+          <option value="popularity">Popularity</option>
+        </select>
+        <button type="submit">Search</button>
+      </form>
+    </section>
+
+    <!-- Login form (POST) -->
+    <section id="login" aria-label="Login form">
+      <h2>Login Form (POST)</h2>
+      <form action="/login" method="POST">
+        <input type="hidden" name="csrf_token" value="tok_login_x9y8z7w6v5u4t3s2r1q0">
+        <input type="hidden" name="redirect" value="/dashboard">
+        <input type="hidden" name="remember_token" value="rtok_aabbccddeeff00112233445566">
+        <div>
+          <label for="username">Username:</label>
+          <input type="text" id="username" name="username" required autocomplete="username">
+        </div>
+        <div>
+          <label for="pass">Password:</label>
+          <input type="password" id="pass" name="password" required autocomplete="current-password">
+        </div>
+        <div>
+          <label><input type="checkbox" name="remember_me" value="1"> Remember me</label>
+        </div>
+        <button type="submit">Sign In</button>
+        <button type="button">Forgot Password?</button>
+      </form>
+    </section>
+
+    <!-- Registration form (POST, many fields) -->
+    <section id="register" aria-label="Registration form">
+      <h2>Registration Form (POST)</h2>
+      <form action="/register" method="POST">
+        <input type="hidden" name="csrf_token" value="tok_reg_mn0pq1rs2tu3vw4xy5z6">
+        <input type="hidden" name="step" value="1">
+
+        <h3>Personal Information</h3>
+        <div>
+          <label for="reg-first">First Name:</label>
+          <input type="text" id="reg-first" name="first_name" required>
+        </div>
+        <div>
+          <label for="reg-last">Last Name:</label>
+          <input type="text" id="reg-last" name="last_name" required>
+        </div>
+        <div>
+          <label for="reg-email">Email:</label>
+          <input type="email" id="reg-email" name="email" required autocomplete="email">
+        </div>
+        <div>
+          <label for="reg-pass">Password:</label>
+          <input type="password" id="reg-pass" name="password" required minlength="8" autocomplete="new-password">
+        </div>
+        <div>
+          <label for="reg-pass-confirm">Confirm Password:</label>
+          <input type="password" id="reg-pass-confirm" name="password_confirm" required>
+        </div>
+
+        <h3>Account Details</h3>
+        <div>
+          <label for="reg-username">Username:</label>
+          <input type="text" id="reg-username" name="username" required>
+        </div>
+        <div>
+          <label for="reg-dob">Date of Birth:</label>
+          <input type="date" id="reg-dob" name="dob">
+        </div>
+        <div>
+          <label for="reg-country">Country:</label>
+          <select id="reg-country" name="country">
+            <option value="">Select country...</option>
+            <option value="US">United States</option>
+            <option value="GB">United Kingdom</option>
+            <option value="CA">Canada</option>
+            <option value="AU">Australia</option>
+            <option value="DE">Germany</option>
+            <option value="FR">France</option>
+            <option value="JP">Japan</option>
+          </select>
+        </div>
+        <div>
+          <label for="reg-bio">Bio:</label>
+          <textarea id="reg-bio" name="bio" rows="3" cols="40"></textarea>
+        </div>
+
+        <h3>Preferences</h3>
+        <fieldset>
+          <legend>Notification Preferences</legend>
+          <label><input type="checkbox" name="notif_email" value="1" checked> Email notifications</label>
+          <label><input type="checkbox" name="notif_sms" value="1"> SMS notifications</label>
+          <label><input type="checkbox" name="notif_push" value="1" checked> Push notifications</label>
+          <label><input type="checkbox" name="notif_marketing" value="1"> Marketing emails</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Account Type</legend>
+          <label><input type="radio" name="account_type" value="personal" checked> Personal</label>
+          <label><input type="radio" name="account_type" value="business"> Business</label>
+          <label><input type="radio" name="account_type" value="enterprise"> Enterprise</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Terms</legend>
+          <label><input type="checkbox" name="terms" required> I agree to the <a href="/terms">Terms of Service</a></label>
+          <label><input type="checkbox" name="privacy" required> I agree to the <a href="/privacy">Privacy Policy</a></label>
+        </fieldset>
+
+        <button type="submit">Create Account</button>
+        <button type="reset">Clear Form</button>
+      </form>
+    </section>
+
+    <!-- Contact form (POST with file upload) -->
+    <section id="contact" aria-label="Contact form">
+      <h2>Contact Form (POST + File)</h2>
+      <form action="/contact" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="tok_contact_11223344556677889900">
+        <div>
+          <label for="contact-name">Name:</label>
+          <input type="text" id="contact-name" name="name" required>
+        </div>
+        <div>
+          <label for="contact-email">Email:</label>
+          <input type="email" id="contact-email" name="email" required>
+        </div>
+        <div>
+          <label for="contact-subject">Subject:</label>
+          <select id="contact-subject" name="subject">
+            <option value="general">General Inquiry</option>
+            <option value="support">Technical Support</option>
+            <option value="billing">Billing</option>
+            <option value="partnership">Partnership</option>
+          </select>
+        </div>
+        <div>
+          <label for="contact-msg">Message:</label>
+          <textarea id="contact-msg" name="message" rows="6" cols="50" required></textarea>
+        </div>
+        <div>
+          <label for="contact-file">Attachment:</label>
+          <input type="file" id="contact-file" name="attachment" accept=".pdf,.doc,.docx,.png,.jpg">
+        </div>
+        <div>
+          <label for="contact-priority">Priority:</label>
+          <select id="contact-priority" name="priority">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+        <button type="submit">Send Message</button>
+      </form>
+    </section>
+
+    <!-- Multi-step form -->
+    <section aria-label="Multi-step form">
+      <h2>Multi-Step Form (Wizard)</h2>
+      <form action="/wizard" method="POST">
+        <input type="hidden" name="csrf_token" value="tok_wiz_9876543210abcdef">
+        <input type="hidden" name="wizard_step" value="2">
+        <input type="hidden" name="previous_data" value="eyJzdGVwMSI6eyJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifX0=">
+
+        <h3>Step 2: Address Information</h3>
+        <div>
+          <label for="addr-street">Street Address:</label>
+          <input type="text" id="addr-street" name="street" required>
+        </div>
+        <div>
+          <label for="addr-city">City:</label>
+          <input type="text" id="addr-city" name="city" required>
+        </div>
+        <div>
+          <label for="addr-state">State/Province:</label>
+          <input type="text" id="addr-state" name="state">
+        </div>
+        <div>
+          <label for="addr-zip">ZIP/Postal Code:</label>
+          <input type="text" id="addr-zip" name="zip" required>
+        </div>
+
+        <button type="submit" name="action" value="back">Back</button>
+        <button type="submit" name="action" value="next">Next</button>
+      </form>
+    </section>
+
+    <!-- Filter form (GET, many params) -->
+    <section aria-label="Product filters">
+      <h2>Product Filter Form (GET)</h2>
+      <form action="/products" method="GET">
+        <input type="hidden" name="csrf" value="tok_filter_abcdef123456">
+        <div>
+          <label for="filter-category">Category:</label>
+          <select id="filter-category" name="category">
+            <option value="">All Categories</option>
+            <option value="electronics">Electronics</option>
+            <option value="clothing">Clothing</option>
+            <option value="books">Books</option>
+            <option value="home">Home &amp; Garden</option>
+            <option value="sports">Sports</option>
+          </select>
+        </div>
+        <div>
+          <label for="filter-price-min">Min Price:</label>
+          <input type="number" id="filter-price-min" name="price_min" min="0" step="0.01">
+        </div>
+        <div>
+          <label for="filter-price-max">Max Price:</label>
+          <input type="number" id="filter-price-max" name="price_max" min="0" step="0.01">
+        </div>
+        <div>
+          <label for="filter-rating">Min Rating:</label>
+          <select id="filter-rating" name="min_rating">
+            <option value="">Any</option>
+            <option value="1">1+ Stars</option>
+            <option value="2">2+ Stars</option>
+            <option value="3">3+ Stars</option>
+            <option value="4">4+ Stars</option>
+          </select>
+        </div>
+        <div>
+          <label for="filter-sort">Sort:</label>
+          <select id="filter-sort" name="sort">
+            <option value="relevance">Relevance</option>
+            <option value="price_asc">Price: Low to High</option>
+            <option value="price_desc">Price: High to Low</option>
+            <option value="rating">Highest Rated</option>
+            <option value="newest">Newest</option>
+          </select>
+        </div>
+        <fieldset>
+          <legend>In Stock Only</legend>
+          <label><input type="checkbox" name="in_stock" value="1"> Show only in-stock items</label>
+        </fieldset>
+        <fieldset>
+          <legend>Brand</legend>
+          <label><input type="checkbox" name="brand" value="acme"> Acme Corp</label>
+          <label><input type="checkbox" name="brand" value="globex"> Globex</label>
+          <label><input type="checkbox" name="brand" value="initech"> Initech</label>
+          <label><input type="checkbox" name="brand" value="hooli"> Hooli</label>
+        </fieldset>
+        <button type="submit">Apply Filters</button>
+        <button type="reset">Reset Filters</button>
+      </form>
+    </section>
+
+    <!-- Newsletter form (minimal, action via JS) -->
+    <section aria-label="Newsletter">
+      <h2>Newsletter Signup</h2>
+      <form action="/newsletter/subscribe" method="POST">
+        <input type="hidden" name="csrf" value="tok_newsletter_zyx987wvu654">
+        <input type="hidden" name="list_id" value="nl_main_2025">
+        <input type="hidden" name="source" value="footer">
+        <label for="nl-email">Email:</label>
+        <input type="email" id="nl-email" name="email" placeholder="your@email.com" required>
+        <button type="submit">Subscribe</button>
+      </form>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <p>Forms Benchmark v1.0</p>
+    <nav aria-label="Footer links">
+      <a href="/terms">Terms</a> |
+      <a href="/privacy">Privacy</a> |
+      <a href="/help">Help</a>
+    </nav>
+  </footer>
+</body>
+</html>

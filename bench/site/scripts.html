@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scripts — JavaScript DOM Mutation</title>
+</head>
+<body>
+  <header role="banner">
+    <h1 id="page-title">Scripts Benchmark Page</h1>
+    <p id="subtitle">Tests JavaScript execution and DOM mutation.</p>
+  </header>
+
+  <main role="main">
+    <section aria-label="Static content before JS">
+      <h2>Pre-Script Content</h2>
+      <p>This content exists before any JavaScript runs. The JS below will modify the DOM.</p>
+    </section>
+
+    <!-- Container for dynamically generated content -->
+    <div id="dynamic-container"></div>
+
+    <!-- Container for manipulated content -->
+    <section id="manipulate-section" aria-label="Content to be modified">
+      <h2 id="heading-to-change">This Heading Will Change</h2>
+      <p id="paragraph-to-change">This paragraph will be replaced by JavaScript.</p>
+      <ul id="list-to-populate"></ul>
+      <div id="attrs-container" data-count="0"></div>
+    </section>
+
+    <!-- Counter -->
+    <section aria-label="Counter" id="counter-section">
+      <h2>Counter</h2>
+      <p>Count: <span id="counter">0</span></p>
+      <button type="button" id="increment-btn" onclick="incrementCounter()">Increment</button>
+    </section>
+
+    <!-- Form manipulation -->
+    <section aria-label="Dynamic form" id="form-section">
+      <h2>Dynamic Form</h2>
+      <form id="dynamic-form" action="/submit" method="POST">
+        <input type="hidden" name="csrf" value="csrf_script_xyz789">
+        <div id="form-fields"></div>
+        <button type="submit">Submit Dynamic Form</button>
+      </form>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <p id="footer-text">Scripts Benchmark v1.0</p>
+    <div id="generated-footer-links"></div>
+  </footer>
+
+  <script>
+    // --- Script 1: DOM creation and insertion ---
+    (function() {
+      var container = document.getElementById('dynamic-container');
+      var section = document.createElement('section');
+      section.setAttribute('aria-label', 'Dynamically generated content');
+
+      var h2 = document.createElement('h2');
+      h2.textContent = 'Generated Section';
+      section.appendChild(h2);
+
+      for (var i = 1; i <= 20; i++) {
+        var article = document.createElement('article');
+        article.setAttribute('id', 'dyn-article-' + i);
+        var title = document.createElement('h3');
+        title.textContent = 'Generated Article ' + i;
+        article.appendChild(title);
+        var text = document.createElement('p');
+        text.textContent = 'This article was created by JavaScript. It is number ' + i + ' of 20 generated articles.';
+        article.appendChild(text);
+        if (i % 3 === 0) {
+          var link = document.createElement('a');
+          link.href = '/generated/' + i;
+          link.textContent = 'Read more about article ' + i;
+          article.appendChild(link);
+        }
+        section.appendChild(article);
+      }
+
+      container.appendChild(section);
+    })();
+
+    // --- Script 2: DOM manipulation ---
+    (function() {
+      document.getElementById('heading-to-change').textContent = 'Heading Changed by JavaScript!';
+      document.getElementById('heading-to-change').setAttribute('data-modified', 'true');
+
+      document.getElementById('paragraph-to-change').textContent = 'This paragraph was successfully replaced by JavaScript execution.';
+
+      var list = document.getElementById('list-to-populate');
+      var items = ['JavaScript executed successfully', 'DOM manipulation works', 'Semantic tree should reflect changes', 'pardus-browser --js flag active'];
+      for (var j = 0; j < items.length; j++) {
+        var li = document.createElement('li');
+        li.textContent = items[j];
+        list.appendChild(li);
+      }
+
+      document.getElementById('attrs-container').textContent = 'Attributes were set: count=' + 20;
+      document.getElementById('attrs-container').setAttribute('data-source', 'javascript');
+    })();
+
+    // --- Script 3: Counter logic ---
+    var count = 0;
+    function incrementCounter() {
+      count++;
+      document.getElementById('counter').textContent = String(count);
+    }
+
+    // --- Script 4: Dynamic form fields ---
+    (function() {
+      var fieldsContainer = document.getElementById('form-fields');
+      var fieldConfigs = [
+        { tag: 'input', type: 'text', name: 'field_a', label: 'Field A' },
+        { tag: 'input', type: 'email', name: 'field_b', label: 'Field B' },
+        { tag: 'select', name: 'field_c', label: 'Field C', options: ['Option 1', 'Option 2', 'Option 3'] }
+      ];
+      for (var k = 0; k < fieldConfigs.length; k++) {
+        var config = fieldConfigs[k];
+        var wrapper = document.createElement('div');
+        var label = document.createElement('label');
+        label.textContent = config.label + ':';
+        label.setAttribute('for', 'dyn-' + config.name);
+        wrapper.appendChild(label);
+
+        if (config.tag === 'input') {
+          var input = document.createElement('input');
+          input.type = config.type;
+          input.name = config.name;
+          input.id = 'dyn-' + config.name;
+          wrapper.appendChild(input);
+        } else if (config.tag === 'select') {
+          var select = document.createElement('select');
+          select.name = config.name;
+          select.id = 'dyn-' + config.name;
+          for (var m = 0; m < config.options.length; m++) {
+            var opt = document.createElement('option');
+            opt.value = config.options[m].toLowerCase().replace(/ /g, '-');
+            opt.textContent = config.options[m];
+            select.appendChild(opt);
+          }
+          wrapper.appendChild(select);
+        }
+        fieldsContainer.appendChild(wrapper);
+      }
+    })();
+
+    // --- Script 5: Footer links ---
+    (function() {
+      var footerLinks = document.getElementById('generated-footer-links');
+      var links = [
+        { text: 'Generated Link 1', href: '/gen/1' },
+        { text: 'Generated Link 2', href: '/gen/2' },
+        { text: 'Generated Link 3', href: '/gen/3' },
+        { text: 'Generated Link 4', href: '/gen/4' },
+        { text: 'Generated Link 5', href: '/gen/5' }
+      ];
+      for (var n = 0; n < links.length; n++) {
+        var a = document.createElement('a');
+        a.href = links[n].href;
+        a.textContent = links[n].text;
+        a.style.marginRight = '10px';
+        footerLinks.appendChild(a);
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semantic Roles — All ARIA Roles</title>
+</head>
+<body>
+  <!-- document role (implicit on body) -->
+
+  <header role="banner">
+    <h1>Semantic Roles Page</h1>
+    <p>Tests all 24+ SemanticRole variants that pardus-browser recognizes.</p>
+  </header>
+
+  <nav role="navigation" aria-label="Main navigation">
+    <ul>
+      <li><a href="#s1">Section 1</a></li>
+      <li><a href="#s2">Section 2</a></li>
+      <li><a href="#s3">Section 3</a></li>
+    </ul>
+  </nav>
+
+  <main role="main">
+    <!-- Heading levels h1-h6 -->
+    <section id="s1" aria-label="Headings">
+      <h2>Heading Levels</h2>
+      <h3>Heading Level 3</h3>
+      <h4>Heading Level 4</h4>
+      <h5>Heading Level 5</h5>
+      <h6>Heading Level 6</h6>
+    </section>
+
+    <!-- Landmark: region -->
+    <div role="region" aria-label="Feature showcase">
+      <h2>Landmarks</h2>
+
+      <!-- banner (header) already above -->
+      <!-- navigation (nav) already above -->
+      <!-- main already wrapping -->
+
+      <!-- contentinfo (footer) will be below -->
+
+      <!-- complementary (aside) -->
+      <aside role="complementary" aria-label="Related info">
+        <p>This is complementary content in an aside element.</p>
+        <a href="/related">Related article</a>
+      </aside>
+
+      <!-- form -->
+      <form role="form" aria-label="Search form">
+        <label for="sem-search">Search:</label>
+        <input type="search" id="sem-search" name="q">
+        <button type="submit">Search</button>
+      </form>
+
+      <!-- search -->
+      <form role="search" aria-label="Site search">
+        <input type="search" name="site_q" placeholder="Site search...">
+        <button type="submit">Go</button>
+      </form>
+
+      <!-- region (explicit) -->
+      <div role="region" aria-label="Stats region">
+        <p>Statistics and metrics appear here.</p>
+      </div>
+    </div>
+
+    <section id="s2" aria-label="Interactive elements">
+      <h2>Interactive Roles</h2>
+
+      <!-- link -->
+      <p>
+        <a href="/link-target">Standard Link</a>
+        <a href="/external-link" target="_blank">External Link</a>
+      </p>
+
+      <!-- button -->
+      <p>
+        <button type="button">Standard Button</button>
+        <button type="submit">Submit Button</button>
+        <button type="reset">Reset Button</button>
+      </p>
+
+      <!-- textbox -->
+      <p>
+        <input type="text" placeholder="Text input (textbox)">
+        <textarea placeholder="Textarea (textbox)">Text area content</textarea>
+      </p>
+
+      <!-- checkbox -->
+      <p>
+        <label><input type="checkbox" name="opt1"> Checkbox 1</label>
+        <label><input type="checkbox" name="opt2" checked> Checkbox 2</label>
+      </p>
+
+      <!-- radio -->
+      <p>
+        <label><input type="radio" name="radio-group" value="a"> Radio A</label>
+        <label><input type="radio" name="radio-group" value="b"> Radio B</label>
+      </p>
+
+      <!-- combobox -->
+      <p>
+        <select name="combo">
+          <option value="">Select...</option>
+          <option value="1">Option 1</option>
+          <option value="2">Option 2</option>
+          <option value="3">Option 3</option>
+        </select>
+      </p>
+    </section>
+
+    <section id="s3" aria-label="Structure elements">
+      <h2>Structural Elements</h2>
+
+      <!-- article -->
+      <article>
+        <h3>Article Element</h3>
+        <p>This is an independent article within the page. Articles represent self-contained content.</p>
+        <a href="/article/full">Read full article</a>
+      </article>
+
+      <!-- list -->
+      <h3>List Elements</h3>
+      <ul>
+        <li>Unordered item 1</li>
+        <li>Unordered item 2</li>
+        <li>
+          Nested list:
+          <ul>
+            <li>Nested item 1</li>
+            <li>Nested item 2</li>
+          </ul>
+        </li>
+      </ul>
+      <ol>
+        <li>Ordered item 1</li>
+        <li>Ordered item 2</li>
+        <li>Ordered item 3</li>
+      </ol>
+
+      <!-- listitem (implicit in li) -->
+
+      <!-- table -->
+      <h3>Table Element</h3>
+      <table>
+        <caption>User Directory</caption>
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Role</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Alice</td>
+            <td>Admin</td>
+            <td>Active</td>
+          </tr>
+          <tr>
+            <td>Bob</td>
+            <td>Editor</td>
+            <td>Active</td>
+          </tr>
+          <tr>
+            <td>Charlie</td>
+            <td>Viewer</td>
+            <td>Inactive</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total</th>
+            <td colspan="2">3 users</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <!-- row, cell, columnheader, rowheader (implicit in table) -->
+
+      <!-- image -->
+      <h3>Image Element</h3>
+      <figure>
+        <img src="/images/semantic-test.png" alt="Semantic roles diagram showing ARIA hierarchy">
+        <figcaption>Figure 1: ARIA role hierarchy diagram</figcaption>
+      </figure>
+
+      <!-- dialog -->
+      <h3>Dialog Element</h3>
+      <dialog aria-label="Info dialog">
+        <p>This is a native dialog element.</p>
+        <button type="button">Close</button>
+      </dialog>
+
+      <!-- Generic (custom div without semantic meaning) -->
+      <div>
+        <p>This is a generic div with no semantic role — should be mapped to "generic" or "static text".</p>
+      </div>
+
+      <!-- Other ARIA roles -->
+      <div role="alert" aria-live="assertive">
+        <p>Alert: This is an important notification.</p>
+      </div>
+
+      <div role="log" aria-live="polite" aria-relevant="additions">
+        <p>Log entry: System started.</p>
+        <p>Log entry: User connected.</p>
+      </div>
+
+      <div role="status" aria-live="polite">
+        <p>Status: 3 tasks completed out of 10.</p>
+      </div>
+
+      <div role="timer" aria-live="off">
+        <p>Time remaining: 5:00</p>
+      </div>
+
+      <div role="progressbar" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100">
+        <span>65%</span>
+      </div>
+
+      <div role="tooltip">
+        <p>Tooltip: Hover over items for more info.</p>
+      </div>
+
+      <!-- tabindex elements -->
+      <div tabindex="0" role="gridcell">Focusable cell 1</div>
+      <div tabindex="0" role="gridcell">Focusable cell 2</div>
+      <div tabindex="0" role="gridcell">Focusable cell 3</div>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <p>Semantic Roles Benchmark v1.0</p>
+    <nav aria-label="Footer navigation">
+      <a href="/semantic/accessibility">Accessibility Guide</a>
+      <a href="/semantic/aria">ARIA Reference</a>
+    </nav>
+  </footer>
+</body>
+</html>

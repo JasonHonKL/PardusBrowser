@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Elements — Action Computation</title>
+</head>
+<body>
+  <header role="banner">
+    <h1>Interactive Elements Page</h1>
+    <nav role="navigation" aria-label="Main navigation">
+      <a href="/home">Home</a>
+      <a href="/products">Products</a>
+      <a href="/about">About</a>
+      <button type="button">Menu</button>
+    </nav>
+  </header>
+
+  <main role="main">
+    <!-- Various input types -->
+    <section aria-label="Input types">
+      <h2>Input Types</h2>
+
+      <h3>Text Inputs</h3>
+      <label for="name">Name:</label>
+      <input type="text" id="name" name="name" placeholder="Enter your name">
+
+      <label for="email">Email:</label>
+      <input type="email" id="email" name="email" placeholder="you@example.com">
+
+      <label for="password">Password:</label>
+      <input type="password" id="password" name="password">
+
+      <label for="search">Search:</label>
+      <input type="search" id="search" name="q" placeholder="Search...">
+
+      <label for="url">Website:</label>
+      <input type="url" id="url" name="url" placeholder="https://example.com">
+
+      <label for="phone">Phone:</label>
+      <input type="tel" id="phone" name="phone" placeholder="+1-555-123-4567">
+
+      <h3>Number Inputs</h3>
+      <label for="age">Age:</label>
+      <input type="number" id="age" name="age" min="0" max="150">
+
+      <label for="quantity">Quantity:</label>
+      <input type="number" id="quantity" name="qty" min="1" max="100" value="1">
+
+      <h3>Selection Inputs</h3>
+      <fieldset>
+        <legend>Subscription Plan</legend>
+        <label><input type="radio" name="plan" value="free"> Free</label>
+        <label><input type="radio" name="plan" value="pro"> Pro</label>
+        <label><input type="radio" name="plan" value="enterprise"> Enterprise</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Notifications</legend>
+        <label><input type="checkbox" name="notif_email" checked> Email notifications</label>
+        <label><input type="checkbox" name="notif_sms"> SMS notifications</label>
+        <label><input type="checkbox" name="notif_push" checked> Push notifications</label>
+        <label><input type="checkbox" name="notif_digest"> Weekly digest</label>
+      </fieldset>
+
+      <label for="country">Country:</label>
+      <select id="country" name="country">
+        <option value="">Select a country</option>
+        <option value="us">United States</option>
+        <option value="uk">United Kingdom</option>
+        <option value="de">Germany</option>
+        <option value="fr">France</option>
+        <option value="jp">Japan</option>
+        <option value="au">Australia</option>
+        <option value="ca">Canada</option>
+        <option value="br">Brazil</option>
+      </select>
+
+      <label for="role">Role:</label>
+      <select id="role" name="role" multiple>
+        <option value="admin">Admin</option>
+        <option value="editor">Editor</option>
+        <option value="viewer">Viewer</option>
+      </select>
+
+      <label for="bio">Bio:</label>
+      <textarea id="bio" name="bio" rows="4" cols="50" placeholder="Tell us about yourself..."></textarea>
+
+      <h3>Range and Date Inputs</h3>
+      <label for="volume">Volume:</label>
+      <input type="range" id="volume" name="volume" min="0" max="100" value="75">
+
+      <label for="start-date">Start Date:</label>
+      <input type="date" id="start-date" name="start_date">
+
+      <label for="start-time">Start Time:</label>
+      <input type="time" id="start-time" name="start_time">
+
+      <label for="datetime">Appointment:</label>
+      <input type="datetime-local" id="datetime" name="appointment">
+
+      <label for="month">Month:</label>
+      <input type="month" id="month" name="month">
+
+      <label for="week">Week:</label>
+      <input type="week" id="week" name="week">
+
+      <h3>Toggle and Switch</h3>
+      <label><input type="checkbox" name="dark_mode" checked> Dark mode</label>
+      <label><input type="checkbox" name="animations"> Enable animations</label>
+      <label><input type="checkbox" name="sound"> Sound effects</label>
+
+      <h3>File Input</h3>
+      <label for="avatar">Avatar:</label>
+      <input type="file" id="avatar" name="avatar" accept="image/*">
+
+      <label for="documents">Documents:</label>
+      <input type="file" id="documents" name="docs" multiple accept=".pdf,.doc,.docx">
+
+      <h3>Color Input</h3>
+      <label for="theme-color">Theme Color:</label>
+      <input type="color" id="theme-color" name="theme_color" value="#3366ff">
+
+      <h3>Hidden Input</h3>
+      <input type="hidden" name="csrf_token" value="a1b2c3d4e5f6g7h8i9j0">
+    </section>
+
+    <!-- Various button types -->
+    <section aria-label="Button types">
+      <h2>Button Types</h2>
+      <button type="submit">Submit</button>
+      <button type="reset">Reset</button>
+      <button type="button">Cancel</button>
+      <button type="button" disabled>Disabled Button</button>
+      <button type="button" aria-pressed="true">Toggle Me</button>
+      <button type="button" aria-expanded="false">Expand Details</button>
+      <button type="button" aria-label="Close dialog">X</button>
+
+      <input type="submit" value="Submit via Input">
+      <input type="reset" value="Reset via Input">
+      <input type="button" value="Button via Input">
+    </section>
+
+    <!-- Links with various states -->
+    <section aria-label="Link types">
+      <h2>Link Types</h2>
+      <nav aria-label="Resource links">
+        <a href="/doc/api">API Documentation</a>
+        <a href="/doc/tutorial">Tutorial</a>
+        <a href="/blog">Blog</a>
+        <a href="/changelog">Changelog</a>
+        <a href="https://github.com/example/repo">GitHub Repository</a>
+        <a href="https://example.com/external">External Link</a>
+        <a href="mailto:support@example.com">Email Support</a>
+        <a href="tel:+1-555-123-4567">Call Us</a>
+        <a href="/download/v2.0" download>Download v2.0</a>
+        <a href="#section-1">Anchor Link</a>
+        <a href="/page" aria-disabled="true">Disabled Link</a>
+      </nav>
+    </section>
+
+    <!-- Content Editable -->
+    <section aria-label="Editable content">
+      <h2>Editable Content</h2>
+      <div contenteditable="true" role="textbox" aria-label="Rich text editor">
+        <p>Click here to edit this content.</p>
+      </div>
+    </section>
+
+    <!-- Tabs (ARIA tablist pattern) -->
+    <section aria-label="Tabbed interface">
+      <h2>Tabs</h2>
+      <div role="tablist" aria-label="Settings tabs">
+        <button type="button" role="tab" aria-selected="true" id="tab-1" aria-controls="panel-1">General</button>
+        <button type="button" role="tab" aria-selected="false" id="tab-2" aria-controls="panel-2">Privacy</button>
+        <button type="button" role="tab" aria-selected="false" id="tab-3" aria-controls="panel-3">Advanced</button>
+      </div>
+      <div role="tabpanel" id="panel-1" aria-labelledby="tab-1">
+        <p>General settings content here.</p>
+      </div>
+      <div role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden>
+        <p>Privacy settings content here.</p>
+      </div>
+      <div role="tabpanel" id="panel-3" aria-labelledby="tab-3" hidden>
+        <p>Advanced settings content here.</p>
+      </div>
+    </section>
+
+    <!-- Dialog trigger -->
+    <section aria-label="Dialog example">
+      <h2>Dialog</h2>
+      <button type="button" onclick="document.getElementById('modal').showModal()">Open Dialog</button>
+      <dialog id="modal" aria-label="Confirmation dialog">
+        <form method="dialog">
+          <p>Are you sure you want to proceed?</p>
+          <button type="submit" value="confirm">Confirm</button>
+          <button type="submit" value="cancel">Cancel</button>
+        </form>
+      </dialog>
+    </section>
+
+    <!-- Data list -->
+    <section aria-label="Data list example">
+      <h2>Data List</h2>
+      <label for="framework">Favorite Framework:</label>
+      <input type="text" id="framework" name="framework" list="frameworks">
+      <datalist id="frameworks">
+        <option value="React">
+        <option value="Vue">
+        <option value="Angular">
+        <option value="Svelte">
+        <option value="Solid">
+        <option value="Preact">
+        <option value="Ember">
+        <option value="Alpine">
+      </datalist>
+    </section>
+
+    <!-- Output element -->
+    <section aria-label="Calculation">
+      <h2>Calculator</h2>
+      <form oninput="result.value = parseInt(a.value) + parseInt(b.value)">
+        <input type="number" id="a" name="a" value="10"> +
+        <input type="number" id="b" name="b" value="20"> =
+        <output name="result" for="a b">30</output>
+      </form>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <p>Interactive Elements Benchmark v1.0</p>
+  </footer>
+</body>
+</html>

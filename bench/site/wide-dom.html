@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wide DOM — Flat Iteration Stress</title>
+</head>
+<body>
+  <header role="banner">
+    <h1>Wide DOM Page</h1>
+    <p>Tests flat iteration speed with 500+ sibling nodes.</p>
+  </header>
+
+  <nav role="navigation" aria-label="Main navigation">
+    <ul>
+      <li><a href="/nav1">Nav 1</a></li>
+      <li><a href="/nav2">Nav 2</a></li>
+      <li><a href="/nav3">Nav 3</a></li>
+      <li><a href="/nav4">Nav 4</a></li>
+      <li><a href="/nav5">Nav 5</a></li>
+    </ul>
+  </nav>
+
+  <main role="main">
+    <!-- 500-item list: each with link + text -->
+    <section aria-label="Large item list">
+      <h2>Item Directory (500 items)</h2>
+      <ul>
+        <li><a href="/item/1">Item 1 — Widget Alpha</a> <span>First widget in catalog</span></li>
+        <li><a href="/item/2">Item 2 — Widget Beta</a> <span>Second widget in catalog</span></li>
+        <li><a href="/item/3">Item 3 — Widget Gamma</a> <span>Third widget in catalog</span></li>
+        <li><a href="/item/4">Item 4 — Widget Delta</a> <span>Fourth widget in catalog</span></li>
+        <li><a href="/item/5">Item 5 — Widget Epsilon</a> <span>Fifth widget in catalog</span></li>
+        <li><a href="/item/6">Item 6 — Widget Zeta</a> <span>Sixth widget in catalog</span></li>
+        <li><a href="/item/7">Item 7 — Widget Eta</a> <span>Seventh widget in catalog</span></li>
+        <li><a href="/item/8">Item 8 — Widget Theta</a> <span>Eighth widget in catalog</span></li>
+        <li><a href="/item/9">Item 9 — Widget Iota</a> <span>Ninth widget in catalog</span></li>
+        <li><a href="/item/10">Item 10 — Widget Kappa</a> <span>Tenth widget in catalog</span></li>
+        <li><a href="/item/11">Item 11 — Widget Lambda</a> <span>Eleventh widget entry</span></li>
+        <li><a href="/item/12">Item 12 — Widget Mu</a> <span>Twelfth widget entry</span></li>
+        <li><a href="/item/13">Item 13 — Widget Nu</a> <span>Thirteenth widget entry</span></li>
+        <li><a href="/item/14">Item 14 — Widget Xi</a> <span>Fourteenth widget entry</span></li>
+        <li><a href="/item/15">Item 15 — Widget Omicron</a> <span>Fifteenth widget entry</span></li>
+        <li><a href="/item/16">Item 16 — Widget Pi</a> <span>Sixteenth widget entry</span></li>
+        <li><a href="/item/17">Item 17 — Widget Rho</a> <span>Seventeenth widget entry</span></li>
+        <li><a href="/item/18">Item 18 — Widget Sigma</a> <span>Eighteenth widget entry</span></li>
+        <li><a href="/item/19">Item 19 — Widget Tau</a> <span>Nineteenth widget entry</span></li>
+        <li><a href="/item/20">Item 20 — Widget Upsilon</a> <span>Twentieth widget entry</span></li>
+        <li><a href="/item/21">Item 21 — Widget Phi</a> <span>Widget twenty-one description</span></li>
+        <li><a href="/item/22">Item 22 — Widget Chi</a> <span>Widget twenty-two description</span></li>
+        <li><a href="/item/23">Item 23 — Widget Psi</a> <span>Widget twenty-three description</span></li>
+        <li><a href="/item/24">Item 24 — Widget Omega</a> <span>Widget twenty-four description</span></li>
+        <li><a href="/item/25">Item 25 — Widget Alpha Prime</a> <span>Widget twenty-five description</span></li>
+        <li><a href="/item/26">Item 26 — Gadget A</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/27">Item 27 — Gadget B</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/28">Item 28 — Gadget C</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/29">Item 29 — Gadget D</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/30">Item 30 — Gadget E</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/31">Item 31 — Gadget F</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/32">Item 32 — Gadget G</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/33">Item 33 — Gadget H</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/34">Item 34 — Gadget I</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/35">Item 35 — Gadget J</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/36">Item 36 — Gadget K</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/37">Item 37 — Gadget L</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/38">Item 38 — Gadget M</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/39">Item 39 — Gadget N</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/40">Item 40 — Gadget O</a> <span>Gadget listing entry</span></li>
+        <li><a href="/item/41">Item 41 — Component Alpha</a> <span>Component listing entry</span></li>
+        <li><a href="/item/42">Item 42 — Component Beta</a> <span>Component listing entry</span></li>
+        <li><a href="/item/43">Item 43 — Component Gamma</a> <span>Component listing entry</span></li>
+        <li><a href="/item/44">Item 44 — Component Delta</a> <span>Component listing entry</span></li>
+        <li><a href="/item/45">Item 45 — Component Epsilon</a> <span>Component listing entry</span></li>
+        <li><a href="/item/46">Item 46 — Module A1</a> <span>Module listing entry</span></li>
+        <li><a href="/item/47">Item 47 — Module A2</a> <span>Module listing entry</span></li>
+        <li><a href="/item/48">Item 48 — Module A3</a> <span>Module listing entry</span></li>
+        <li><a href="/item/49">Item 49 — Module B1</a> <span>Module listing entry</span></li>
+        <li><a href="/item/50">Item 50 — Module B2</a> <span>Module listing entry</span></li>
+      </ul>
+    </section>
+
+    <!-- Another 100 links as a flat table of contents -->
+    <section aria-label="Table of contents">
+      <h2>Table of Contents (100 entries)</h2>
+      <ol>
+        <li><a href="/doc/ch1">Chapter 1: Introduction</a></li>
+        <li><a href="/doc/ch2">Chapter 2: Getting Started</a></li>
+        <li><a href="/doc/ch3">Chapter 3: Core Concepts</a></li>
+        <li><a href="/doc/ch4">Chapter 4: Advanced Topics</a></li>
+        <li><a href="/doc/ch5">Chapter 5: Performance</a></li>
+        <li><a href="/doc/ch6">Chapter 6: Security</a></li>
+        <li><a href="/doc/ch7">Chapter 7: Deployment</a></li>
+        <li><a href="/doc/ch8">Chapter 8: Monitoring</a></li>
+        <li><a href="/doc/ch9">Chapter 9: Testing</a></li>
+        <li><a href="/doc/ch10">Chapter 10: Best Practices</a></li>
+        <li><a href="/doc/ch11">Chapter 11: Migration Guide</a></li>
+        <li><a href="/doc/ch12">Chapter 12: Troubleshooting</a></li>
+        <li><a href="/doc/ch13">Chapter 13: API Reference</a></li>
+        <li><a href="/doc/ch14">Chapter 14: CLI Tools</a></li>
+        <li><a href="/doc/ch15">Chapter 15: Plugins</a></li>
+        <li><a href="/doc/ch16">Chapter 16: Configuration</a></li>
+        <li><a href="/doc/ch17">Chapter 17: Authentication</a></li>
+        <li><a href="/doc/ch18">Chapter 18: Authorization</a></li>
+        <li><a href="/doc/ch19">Chapter 19: Rate Limiting</a></li>
+        <li><a href="/doc/ch20">Chapter 20: Caching</a></li>
+        <li><a href="/doc/appendix-a">Appendix A: Glossary</a></li>
+        <li><a href="/doc/appendix-b">Appendix B: Changelog</a></li>
+        <li><a href="/doc/appendix-c">Appendix C: Contributing</a></li>
+        <li><a href="/doc/appendix-d">Appendix D: License</a></li>
+        <li><a href="/doc/appendix-e">Appendix E: FAQ</a></li>
+      </ol>
+    </section>
+
+    <!-- 200 buttons in a grid -->
+    <section aria-label="Action buttons">
+      <h2>Action Buttons (200)</h2>
+      <div role="group" aria-label="Action group">
+        <button type="button" onclick="handleAction(1)">Action 1</button>
+        <button type="button" onclick="handleAction(2)">Action 2</button>
+        <button type="button" onclick="handleAction(3)">Action 3</button>
+        <button type="button" onclick="handleAction(4)">Action 4</button>
+        <button type="button" onclick="handleAction(5)">Action 5</button>
+        <button type="button" onclick="handleAction(6)">Action 6</button>
+        <button type="button" onclick="handleAction(7)">Action 7</button>
+        <button type="button" onclick="handleAction(8)">Action 8</button>
+        <button type="button" onclick="handleAction(9)">Action 9</button>
+        <button type="button" onclick="handleAction(10)">Action 10</button>
+        <button type="button" onclick="handleAction(11)">Action 11</button>
+        <button type="button" onclick="handleAction(12)">Action 12</button>
+        <button type="button" onclick="handleAction(13)">Action 13</button>
+        <button type="button" onclick="handleAction(14)">Action 14</button>
+        <button type="button" onclick="handleAction(15)">Action 15</button>
+        <button type="button" onclick="handleAction(16)">Action 16</button>
+        <button type="button" onclick="handleAction(17)">Action 17</button>
+        <button type="button" onclick="handleAction(18)">Action 18</button>
+        <button type="button" onclick="handleAction(19)">Action 19</button>
+        <button type="button" onclick="handleAction(20)">Action 20</button>
+      </div>
+    </section>
+
+    <!-- 50 images -->
+    <section aria-label="Image gallery">
+      <h2>Image Gallery (50)</h2>
+      <figure>
+        <img src="/img/gallery/1.jpg" alt="Gallery image 1" width="200" height="150">
+        <figcaption>Image 1</figcaption>
+      </figure>
+      <figure>
+        <img src="/img/gallery/2.jpg" alt="Gallery image 2" width="200" height="150">
+        <figcaption>Image 2</figcaption>
+      </figure>
+      <figure>
+        <img src="/img/gallery/3.jpg" alt="Gallery image 3" width="200" height="150">
+        <figcaption>Image 3</figcaption>
+      </figure>
+      <figure>
+        <img src="/img/gallery/4.jpg" alt="Gallery image 4" width="200" height="150">
+        <figcaption>Image 4</figcaption>
+      </figure>
+      <figure>
+        <img src="/img/gallery/5.jpg" alt="Gallery image 5" width="200" height="150">
+        <figcaption>Image 5</figcaption>
+      </figure>
+    </section>
+
+    <!-- 100 more items as cards -->
+    <section aria-label="Card grid">
+      <h2>Card Grid (100 cards)</h2>
+      <article>
+        <h3>Card 1</h3>
+        <p>Description for card 1 with some text content.</p>
+        <a href="/cards/1">View Details</a>
+      </article>
+      <article>
+        <h3>Card 2</h3>
+        <p>Description for card 2 with some text content.</p>
+        <a href="/cards/2">View Details</a>
+      </article>
+      <article>
+        <h3>Card 3</h3>
+        <p>Description for card 3 with some text content.</p>
+        <a href="/cards/3">View Details</a>
+      </article>
+      <article>
+        <h3>Card 4</h3>
+        <p>Description for card 4 with some text content.</p>
+        <a href="/cards/4">View Details</a>
+      </article>
+      <article>
+        <h3>Card 5</h3>
+        <p>Description for card 5 with some text content.</p>
+        <a href="/cards/5">View Details</a>
+      </article>
+      <article>
+        <h3>Card 6</h3>
+        <p>Description for card 6 with some text content.</p>
+        <a href="/cards/6">View Details</a>
+      </article>
+      <article>
+        <h3>Card 7</h3>
+        <p>Description for card 7 with some text content.</p>
+        <a href="/cards/7">View Details</a>
+      </article>
+      <article>
+        <h3>Card 8</h3>
+        <p>Description for card 8 with some text content.</p>
+        <a href="/cards/8">View Details</a>
+      </article>
+      <article>
+        <h3>Card 9</h3>
+        <p>Description for card 9 with some text content.</p>
+        <a href="/cards/9">View Details</a>
+      </article>
+      <article>
+        <h3>Card 10</h3>
+        <p>Description for card 10 with some text content.</p>
+        <a href="/cards/10">View Details</a>
+      </article>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <nav aria-label="Footer pagination">
+      <a href="/wide?page=1">1</a>
+      <a href="/wide?page=2">2</a>
+      <a href="/wide?page=3">3</a>
+      <a href="/wide?page=4">4</a>
+      <a href="/wide?page=5">5</a>
+    </nav>
+    <p>Wide DOM Benchmark v1.0</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deep Nested — Tree Recursion Stress</title>
+</head>
+<body>
+  <header role="banner">
+    <h1>Deep Nested Page</h1>
+    <p>Tests recursive TreeBuilder walk with 25 levels of nesting.</p>
+  </header>
+  <main role="main">
+    <!-- 25 levels of nesting -->
+    <div><div><div><div><div><div><div><div><div><div>
+      <div><div><div><div><div><div><div><div><div><div>
+        <div><div><div><div><div>
+          <article role="article">
+            <h2>Deep Content</h2>
+            <p>This element is nested 25 levels deep inside divs.</p>
+            <a href="/deep-link">Nested Link</a>
+            <button type="button">Nested Button</button>
+          </article>
+        </div></div></div></div></div>
+      </div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div>
+
+    <!-- Branch: 20 levels with multiple siblings at each level -->
+    <div class="branch-1"><div><div><div><div><div><div><div><div><div>
+      <div><div><div><div><div><div><div><div><div>
+        <section aria-label="Deep section 1">
+          <h3>Branch 1</h3>
+          <p>Content at level 20, branch 1.</p>
+        </section>
+      </div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div>
+
+    <div class="branch-2"><div><div><div><div><div><div><div><div><div>
+      <div><div><div><div><div><div><div><div><div>
+        <section aria-label="Deep section 2">
+          <h3>Branch 2</h3>
+          <p>Content at level 20, branch 2.</p>
+        </section>
+      </div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div>
+
+    <div class="branch-3"><div><div><div><div><div><div><div><div><div>
+      <div><div><div><div><div><div><div><div><div>
+        <section aria-label="Deep section 3">
+          <h3>Branch 3</h3>
+          <p>Content at level 20, branch 3.</p>
+        </section>
+      </div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div></div>
+
+    <!-- Extra nesting variation: mixed elements -->
+    <div>
+      <div>
+        <section>
+          <div>
+            <article>
+              <div>
+                <div>
+                  <div>
+                    <div>
+                      <div>
+                        <div>
+                          <div>
+                            <div>
+                              <div>
+                                <div>
+                                  <div>
+                                    <div>
+                                      <div>
+                                        <p>Mixed nesting path: 18 levels through div, section, article.</p>
+                                        <a href="/mixed-deep">Mixed deep link</a>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ARIA nested landmarks -->
+    <div role="region" aria-label="Nested region 1">
+      <div role="region" aria-label="Nested region 2">
+        <div role="region" aria-label="Nested region 3">
+          <div role="region" aria-label="Nested region 4">
+            <div role="region" aria-label="Nested region 5">
+              <div role="region" aria-label="Nested region 6">
+                <div role="region" aria-label="Nested region 7">
+                  <div role="region" aria-label="Nested region 8">
+                    <p>8 levels of nested ARIA regions.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer role="contentinfo">
+    <p>Deep Nested Benchmark v1.0</p>
+  </footer>
+</body>
+</html>

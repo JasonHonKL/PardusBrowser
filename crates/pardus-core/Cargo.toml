@@ -5,15 +5,13 @@ edition.workspace = true
 
 [dependencies]
 # HTML Parsing
-html5ever = "0.29"
-markup5ever = "0.14"
-tendril = "0.4"
 scraper = "0.22"
 
 # Async & HTTP
 tokio = { workspace = true }
-reqwest = { version = "0.12", features = ["json", "cookies", "gzip", "brotli", "deflate"] }
+reqwest = { workspace = true }
 url = { workspace = true }
+cookie_store = "0.21"
 
 # Serialization
 serde = { workspace = true }
@@ -23,22 +21,35 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 
 # Error handling
-thiserror = { workspace = true }
 anyhow = { workspace = true }
-
-# Cookie storage
-cookie_store = "0.21"
-
-# Arena allocation
-bumpalo = { version = "3", features = ["collections"] }
+thiserror = { workspace = true }
 
 # Utilities
-chrono = { version = "0.4", features = ["serde"] }
-dirs = "6"
-indexmap = "2"
-
-# JS execution
-deno_core = { workspace = true }
+regex = "1"
+smallvec = "1"
+base64 = { workspace = true }
+parking_lot = { workspace = true }
 
 # Network debugging
 pardus-debug = { path = "../pardus-debug" }
+http = "1"
+
+# JS execution (optional — enables --js flag)
+deno_core = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+# Caching (optional — enables disk cache with blake3 hashing)
+blake3 = { workspace = true, optional = true }
+
+# Streaming parser (optional — enables lol_html streaming)
+lol_html = { workspace = true, optional = true }
+bytes = { version = "1", optional = true }
+
+[features]
+default = ["js"]
+js = ["deno_core", "futures-util", "reqwest/stream"]
+cache = ["blake3"]
+streaming-parser = ["lol_html", "bytes"]
+
+[dev-dependencies]
+tempfile = "3"

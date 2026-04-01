@@ -52,5 +52,14 @@ deno_core::extension!(
         op_get_attribute_names,
         // Fetch
         op_fetch,
+        // Timers
+        op_set_timeout,
+        op_set_interval,
+        op_clear_timer,
+        // MutationObserver
+        op_register_observer,
+        op_disconnect_observer,
+        op_take_mutation_records,
+        op_has_observers,
     ],
 );

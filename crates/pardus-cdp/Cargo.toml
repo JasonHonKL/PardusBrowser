@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pardus-core = { path = "../pardus-core" }
+pardus-core = { path = "../pardus-core", default-features = false }
 tokio = { workspace = true }
 tokio-tungstenite = "0.26"
 futures-util = "0.3"
@@ -12,3 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+reqwest = { workspace = true }
+anyhow = { workspace = true }

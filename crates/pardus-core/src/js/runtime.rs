@@ -5,6 +5,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,6 +22,9 @@ use super::extension::pardus_dom;
 const SCRIPT_TIMEOUT_MS: u64 = 2000; // 2s per script
 const MAX_SCRIPT_SIZE: usize = 100_000; // 100KB
 const MAX_SCRIPTS: usize = 50;
+const EVENT_LOOP_TIMEOUT_MS: u64 = 500;
+const EVENT_LOOP_MAX_POLLS: usize = 3;
+const THREAD_JOIN_GRACE_MS: u64 = 2000;
 
 /// Analytics/tracking patterns to skip (all lowercase for case-insensitive matching)
 const ANALYTICS_PATTERNS: &[&str] = &[
@@ -72,17 +76,19 @@ fn extract_scripts(html: &str) -> Vec<ScriptInfo> {
     doc.select(&selector)
         .enumerate()
         .filter_map(|(i, el)| {
-            // Skip module scripts
-            if el.value().attr("type") == Some("module") {
-                return None;
-            }
+            let is_module = el.value().attr("type") == Some("module");
 
             // Skip external scripts (src attribute)
             if el.value().attr("src").is_some() {
                 return None;
             }
 
-            let code = el.text().collect::<String>();
+            let mut code = el.text().collect::<String>();
+
+            // Transform module syntax for basic support
+            if is_module {
+                code = transform_module_syntax(&code);
+            }
 
             // Skip empty scripts
             if code.trim().is_empty() {
@@ -113,6 +119,64 @@ fn is_analytics_script(code: &str) -> bool {
     ANALYTICS_PATTERNS.iter().any(|p| lower.contains(p))
 }
 
+fn transform_module_syntax(code: &str) -> String {
+    let mut result = String::new();
+
+    for line in code.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("import ") || trimmed.starts_with("import{") || trimmed.starts_with("import(") {
+            continue;
+        }
+
+        if trimmed.starts_with("export default ") {
+            result.push_str(&trimmed[15..]);
+            result.push('\n');
+            continue;
+        }
+
+        if trimmed.starts_with("export const ") {
+            result.push_str(&trimmed[7..]);
+            result.push('\n');
+            continue;
+        }
+        if trimmed.starts_with("export let ") {
+            result.push_str(&trimmed[7..]);
+            result.push('\n');
+            continue;
+        }
+        if trimmed.starts_with("export var ") {
+            result.push_str(&trimmed[7..]);
+            result.push('\n');
+            continue;
+        }
+        if trimmed.starts_with("export function ") {
+            result.push_str(&trimmed[7..]);
+            result.push('\n');
+            continue;
+        }
+        if trimmed.starts_with("export class ") {
+            result.push_str(&trimmed[7..]);
+            result.push('\n');
+            continue;
+        }
+        if trimmed.starts_with("export {") || trimmed.starts_with("export{") {
+            let inner = trimmed.trim_start_matches("export ");
+            result.push_str(inner);
+            result.push('\n');
+            continue;
+        }
+        if trimmed.starts_with("export = ") {
+            continue;
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    result
+}
+
 // ==================== Runtime Creation ====================
 
 /// Create a deno runtime with our DOM extension.
@@ -124,6 +188,9 @@ fn create_runtime(dom: Rc<RefCell<DomDocument>>, base_url: &Url) -> anyhow::Resu
 
     // Store DOM in op state
     runtime.op_state().borrow_mut().put(dom);
+
+    // Store timer queue in op state
+    runtime.op_state().borrow_mut().put(super::timer::TimerQueue::new());
 
     // Set up window.location from base_url
     let location_js = format!(
@@ -159,10 +226,11 @@ fn create_runtime(dom: Rc<RefCell<DomDocument>>, base_url: &Url) -> anyhow::Resu
 /// Result of script execution in a thread.
 struct ThreadResult {
     dom_html: Option<String>,
+    #[allow(dead_code)]
     error: Option<String>,
 }
 
-/// Execute scripts in a separate thread with timeout.
+/// Execute scripts in a separate thread with timeout, graceful termination, and no leaks.
 fn execute_scripts_with_timeout(
     html: String,
     base_url: String,
@@ -174,6 +242,8 @@ fn execute_scripts_with_timeout(
         error: None,
     }));
     let result_clone = result.clone();
+    let terminated = Arc::new(AtomicBool::new(false));
+    let terminated_clone = terminated.clone();
 
     let handle = thread::spawn(move || {
         // Parse base URL
@@ -213,16 +283,74 @@ fn execute_scripts_with_timeout(
             return;
         }
 
-        // Execute each script
+        if terminated_clone.load(Ordering::Relaxed) {
+            return;
+        }
+
+        // Execute each script with termination checks between them
         for script in scripts {
+            if terminated_clone.load(Ordering::Relaxed) {
+                return;
+            }
             if let Err(e) = runtime.execute_script(script.name.clone(), script.code) {
                 // Log error but continue with next script
                 eprintln!("[JS] Script {} error: {}", script.name, e);
             }
         }
 
-        // Run event loop briefly for any pending async ops
-        let _ = runtime.run_event_loop(PollEventLoopOptions::default());
+        if terminated_clone.load(Ordering::Relaxed) {
+            return;
+        }
+
+        // Fire DOMContentLoaded event after all scripts
+        let _ = runtime.execute_script("dom_content_loaded.js", r#"
+    (function() {
+        if (typeof _fireDOMContentLoaded === 'function') _fireDOMContentLoaded();
+        var event = new Event('DOMContentLoaded', { bubbles: true, cancelable: false });
+        document.dispatchEvent(event);
+    })();
+"#);
+
+        // Run event loop with bounded timeout (not infinite)
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(_) => return,
+        };
+        for _ in 0..EVENT_LOOP_MAX_POLLS {
+            if terminated_clone.load(Ordering::Relaxed) {
+                return;
+            }
+            let _ = rt.block_on(async {
+                let _ = tokio::time::timeout(
+                    Duration::from_millis(EVENT_LOOP_TIMEOUT_MS),
+                    runtime.run_event_loop(PollEventLoopOptions::default()),
+                )
+                .await;
+            });
+        }
+
+        // Drain expired timers (delay=0 callbacks)
+        {
+            let op_state_rc = runtime.op_state();
+            let state_rc = op_state_rc.borrow();
+            if let Some(queue) = state_rc.try_borrow::<super::timer::TimerQueue>() {
+                if !queue.is_at_limit() {
+                    let timer_js = queue.get_expired_timer_callbacks_js();
+                    if !timer_js.is_empty() {
+                        drop(state_rc);
+                        let _ = runtime.execute_script("timers.js", timer_js);
+                        let op_state_mut = runtime.op_state();
+                        let mut state_mut = op_state_mut.borrow_mut();
+                        if let Some(queue_mut) = state_mut.try_borrow_mut::<super::timer::TimerQueue>() {
+                            queue_mut.mark_delay_zero_fired();
+                        }
+                    }
+                }
+            }
+        }
 
         // Serialize DOM back to HTML
         let output = dom.borrow().to_html();
@@ -239,13 +367,29 @@ fn execute_scripts_with_timeout(
             break;
         }
         if start.elapsed() >= Duration::from_millis(timeout_ms) {
-            // Timeout - return original HTML
-            eprintln!("[JS] Execution timed out after {}ms", timeout_ms);
-            return None;
+            // Signal termination
+            terminated.store(true, Ordering::SeqCst);
+            eprintln!("[JS] Execution timed out after {}ms, waiting for thread to finish...", timeout_ms);
+
+            // Give the thread a grace period to finish after termination signal
+            let grace_start = Instant::now();
+            loop {
+                if handle.is_finished() {
+                    break;
+                }
+                if grace_start.elapsed() >= Duration::from_millis(THREAD_JOIN_GRACE_MS) {
+                    eprintln!("[JS] Thread did not finish within grace period, returning original HTML");
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            break;
         }
         thread::sleep(Duration::from_millis(10));
     }
 
+    // One final check after the loop (fixes race condition where thread finishes between
+    // is_finished() check and elapsed() check)
     let guard = result.lock().unwrap();
     guard.dom_html.clone()
 }
@@ -356,16 +500,22 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_scripts_skips_module() {
+    fn test_extract_scripts_transforms_module() {
         let html = r#"
             <html><body>
-                <script type="module">import { foo } from './bar.js';</script>
+                <script type="module">import { foo } from './bar.js';
+export const x = 1;
+export function hello() {}</script>
                 <script>regular script</script>
             </body></html>
         "#;
         let scripts = extract_scripts(html);
-        assert_eq!(scripts.len(), 1);
-        assert!(scripts[0].code.contains("regular script"));
+        assert_eq!(scripts.len(), 2);
+        assert!(scripts[0].code.contains("const x = 1;"));
+        assert!(scripts[0].code.contains("function hello() {}"));
+        assert!(!scripts[0].code.contains("import "));
+        assert!(!scripts[0].code.contains("export "));
+        assert!(scripts[1].code.contains("regular script"));
     }
 
     #[test]

@@ -28,11 +28,14 @@ No Chromium binary. No Docker. No GPU. Just HTTP + HTML parsing.
 ## Features
 
 - **Semantic tree output** — ARIA roles, headings, landmarks, interactive elements
+- **Page interaction** — Click links, submit forms, type into fields, wait for selectors, scroll
 - **3 output formats** — Markdown (default), tree, JSON
 - **Navigation graph** — Internal routes, external links, form descriptors with fields
 - **Interactive-only mode** — Strip static content, show only actionable elements
 - **Action annotations** — Every interactive element tagged with `navigate`, `click`, `fill`, `toggle`, or `select`
 - **Network debugger** — DevTools-style request table with subresource discovery and parallel fetching
+- **Session persistence** — Cookies, headers, localStorage across requests
+- **CDP server** — Chrome DevTools Protocol WebSocket endpoint for automation
 - **Fast** — HTTP GET + HTML parse, typically under 200ms
 - **Zero dependencies on Chrome** — Pure Rust, no browser binary needed
 
@@ -188,6 +191,21 @@ The network debugger:
 - Fetches all discovered subresources in parallel (concurrency limit of 6)
 - Includes `network_log` in JSON output when using `--format json --network-log`
 
+### CDP server
+
+Start a Chrome DevTools Protocol WebSocket server for automation:
+
+```bash
+# Start on default host/port
+pardus-browser serve
+
+# Custom host and port
+pardus-browser serve --host 0.0.0.0 --port 9222
+
+# With inactivity timeout
+pardus-browser serve --timeout 60
+```
+
 ### Clean cache
 
 ```bash
@@ -199,25 +217,69 @@ pardus-browser clean --cookies-only
 
 # Only cache
 pardus-browser clean --cache-only
+
+# Custom cache directory
+pardus-browser clean --cache-dir /path/to/cache
 ```
+
+### Page interaction
+
+Interact with pages using the `interact` subcommand. Works at the HTTP level — clicks follow links and submit forms, no rendering engine required.
+
+```bash
+# Click a link — follows href, returns new page
+pardus-browser interact https://example.com click 'a'
+
+# Click a submit button — finds enclosing form, submits it
+pardus-browser interact https://example.com click 'button[type="submit"]'
+
+# Type into a field (returns the field state)
+pardus-browser interact https://example.com type 'input[name="q"]' 'search query'
+
+# Submit a form with field values
+pardus-browser interact https://example.com submit 'form' --field 'q=rust+language'
+
+# Wait for a CSS selector to appear (with timeout)
+pardus-browser interact https://example.com wait '.result-list' --timeout-ms 5000
+
+# Scroll — detects URL pagination (?page=, ?offset=, /page/N)
+pardus-browser interact 'https://example.com/news?page=1' scroll --direction down
+
+# JSON output for the result page
+pardus-browser interact https://example.com click 'a' --format json
+
+# Enable JS execution before interaction
+pardus-browser interact https://example.com wait '.dynamic-content' --js --wait-ms 3000
+```
+
+**How interactions work:**
+
+| Action | Mechanism |
+|--------|-----------|
+| `click` (link) | Resolves href, HTTP GET, returns new page |
+| `click` (button) | Finds enclosing `<form>`, collects all fields (including hidden CSRF tokens), submits via HTTP |
+| `type` | Returns field selector + value (accumulate in `FormState` before submit) |
+| `submit` | Collects all form fields from HTML, merges with `--field` values, HTTP POST/GET |
+| `wait` | Checks current HTML for selector match; polls by re-fetching if not found |
+| `scroll` | Detects pagination patterns in URL (`?page=`, `?offset=`, `?start=`, `/page/N`) |
 
 ## Architecture
 
 ```
 pardus-browser
-├── crates/pardus-core    Core library — HTML parsing, semantic tree, navigation graph
+├── crates/pardus-core    Core library — HTML parsing, semantic tree, navigation graph, interaction
 ├── crates/pardus-debug   Network debugger — request recording, subresource discovery, table output
-├── crates/pardus-cdp     CDP WebSocket server (planned)
+├── crates/pardus-cdp     CDP WebSocket server — Chrome DevTools Protocol for automation
 └── crates/pardus-cli     CLI binary
 ```
 
-**pardus-core** — The engine. Fetches pages via `reqwest`, parses HTML with `scraper`, builds a semantic tree mapping ARIA roles and interactive states. Outputs Markdown, tree, or JSON.
+**pardus-core** — The engine. Fetches pages via `reqwest`, parses HTML with `scraper`, builds a semantic tree mapping ARIA roles and interactive states. Provides page interaction (click, type, submit, wait, scroll) at the HTTP level. Includes session persistence (cookies, headers, localStorage), a custom DOM implementation with CSS selector support, and optional JavaScript execution via deno_core. Outputs Markdown, tree, or JSON.
 
 **pardus-debug** — Network debugging. Records all HTTP requests to a shared `NetworkLog`, discovers subresources from parsed HTML (stylesheets, scripts, images, fonts, media), fetches them in parallel, and formats DevTools-style request tables. Exposes `NetworkRecord`, `ResourceType`, `Initiator`, and `NetworkLog` types for use across crates.
 
-**pardus-cdp** — Chrome DevTools Protocol server (planned). Will expose a WebSocket endpoint for Playwright/Puppeteer integration, enabling JS-rendered pages and real-time interaction.
+**pardus-cdp** — Chrome DevTools Protocol server. Exposes a WebSocket endpoint for browser automation. Includes domain handlers (DOM, Runtime, Network, Page), event bus, target management, message routing, and session lifecycle. Enables Playwright/Puppeteer-style integration.
 
-**pardus-cli** — The `pardus-browser` command-line tool.
+**pardus-cli** — The `pardus-browser` command-line tool. Provides `navigate`, `interact`, `serve`, and `clean` subcommands.
 
 ## Semantic roles detected
 
@@ -245,39 +307,39 @@ pardus-browser
 
 ## Roadmap
 
-### ✅ Working
+### Done
 
 - [x] **Semantic tree output** — ARIA roles, headings, landmarks, interactive elements
 - [x] **Navigation graph** — Internal routes, external links, form descriptors
 - [x] **Multiple output formats** — Markdown, tree, JSON
 - [x] **Interactive-only mode** — Strip static content, show only actionable elements
 - [x] **Action annotations** — navigate, click, fill, toggle, select
+- [x] **Page interaction** — Click links, submit forms, type fields, wait for selectors, scroll
 - [x] **Custom headers** — Pass authentication and custom headers
 - [x] **Cache management** — Clean cookies and cache
 - [x] **Network debugger** — Request table with subresource discovery and parallel fetching
+- [x] **Session persistence** — Cookies, localStorage, auth headers with size limits
+- [x] **CDP WebSocket server** — Domain handlers, event bus, target management, message routing
 
-### ⚠️ Experimental / Partial
+### Experimental
 
 - [~] **JavaScript execution** — V8 via deno_core with custom DOM ops
   - Infrastructure complete (deno_core, 35+ Rust ops, bootstrap.js)
-  - **Currently disabled** — hangs on JS-heavy sites (GitHub, etc.)
+  - **Currently disabled** — hangs on JS-heavy sites
   - Works on simple inline scripts
   - Needs: smarter script filtering, async callback handling
 
 - [~] **Full DOM API** — querySelector, event dispatching, complete Element API
-  - ✅ `querySelector` / `querySelectorAll` with CSS selectors (via scraper crate)
-  - ✅ Event system (Event, CustomEvent, propagation phases)
-  - ✅ Element API: cloneNode, insertBefore, replaceChild, contains, etc.
-  - ✅ classList, dataset, style proxies
-  - ✅ 35+ Rust ops bridging JS ↔ Rust DOM
-  - ✅ 27 unit tests passing
+  - querySelector / querySelectorAll with CSS selectors (fast-path + scraper fallback)
+  - Element API: cloneNode, insertBefore, replaceChild, contains, etc.
+  - classList, dataset, style proxies
+  - 35+ Rust ops bridging JS <-> Rust DOM
+  - Comment nodes, outerHTML, getElementsByTagName, getElementsByClassName
   - **Not usable yet** — blocked by JS execution being disabled
 
-### 🚧 Planned
+### Planned
 
-- [ ] **CDP WebSocket server** — Playwright/Puppeteer compatible API
-- [ ] **Page interaction** — Click, type, scroll, wait for selectors
-- [ ] **Session persistence** — Cookies, localStorage, auth flows
+- [ ] **JS-level interaction** — Click/type/scroll via deno_core DOM when JS is enabled
 - [ ] **Proxy support** — HTTP/SOCKS proxies
 - [ ] **Screenshots** — Optional, for when pixels actually matter
 
@@ -285,9 +347,9 @@ pardus-browser
 
 | Issue | Status | Workaround |
 |-------|--------|------------|
-| JS execution hangs on complex sites | 🔴 Open | Don't use `--js` flag |
-| External scripts not executed | ⚠️ By design | Only inline scripts supported |
-| setTimeout/setInterval no-ops | ⚠️ By design | Prevents infinite loops |
+| JS execution hangs on complex sites | Open | Don't use `--js` flag |
+| External scripts not executed | By design | Only inline scripts supported |
+| setTimeout/setInterval no-ops | By design | Prevents infinite loops |
 
 ## Requirements
 

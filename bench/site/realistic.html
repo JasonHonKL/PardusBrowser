@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acme Corp — Realistic Complex Page</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
+  <script src="analytics.js"></script>
+  <script src="tracking.js"></script>
+</head>
+<body>
+  <!-- Skip to main content -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header role="banner">
+    <div class="header-inner">
+      <a href="/" aria-label="Acme Corp home">
+        <img src="/img/logo.svg" alt="Acme Corp logo" width="120" height="40">
+      </a>
+      <nav role="navigation" aria-label="Primary navigation">
+        <ul>
+          <li><a href="/products" aria-current="page">Products</a></li>
+          <li><a href="/solutions">Solutions</a></li>
+          <li>
+            <button type="button" aria-expanded="false" aria-controls="dropdown-platforms">Platforms
+              <svg aria-hidden="true" width="12" height="12"><path d="M2 4l4 4 4-4"/></svg>
+            </button>
+            <ul id="dropdown-platforms" role="menu" hidden>
+              <li role="menuitem"><a href="/platforms/cloud">Cloud</a></li>
+              <li role="menuitem"><a href="/platforms/edge">Edge</a></li>
+              <li role="menuitem"><a href="/platforms/mobile">Mobile</a></li>
+              <li role="menuitem"><a href="/platforms/iot">IoT</a></li>
+            </ul>
+          </li>
+          <li><a href="/pricing">Pricing</a></li>
+          <li><a href="/docs">Docs</a></li>
+          <li><a href="/blog">Blog</a></li>
+          <li><a href="/customers">Customers</a></li>
+        </ul>
+      </nav>
+      <div class="header-actions">
+        <a href="/login">Sign In</a>
+        <button type="button">Start Free Trial</button>
+        <button type="button" aria-label="Search" aria-expanded="false">
+          <svg aria-hidden="true" width="20" height="20"><circle cx="9" cy="9" r="7"/><path d="M15 15l4 4"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero section -->
+  <section class="hero" aria-label="Hero banner">
+    <div class="hero-content">
+      <h1>Build, Deploy, and Observe Modern Applications</h1>
+      <p>The unified platform for engineering teams to ship faster with confidence. Monitor everything, analyze anything, automate what matters.</p>
+      <form action="/trial" method="POST" class="hero-form">
+        <input type="hidden" name="csrf" value="csrf_realistic_hero_abc123">
+        <input type="hidden" name="source" value="hero">
+        <input type="email" name="email" placeholder="Enter your work email" required aria-label="Email for free trial">
+        <button type="submit">Start Free Trial</button>
+      </form>
+      <p class="hero-note">No credit card required. Free for up to 5 users.</p>
+    </div>
+  </section>
+
+  <main id="main-content" role="main">
+    <!-- Trusted by section -->
+    <section aria-label="Trusted by" class="social-proof">
+      <h2>Trusted by 10,000+ engineering teams</h2>
+      <div class="logo-grid" role="list">
+        <div role="listitem"><img src="/img/logos/company1.svg" alt="Company1 logo" width="120" height="40"></div>
+        <div role="listitem"><img src="/img/logos/company2.svg" alt="Company2 logo" width="120" height="40"></div>
+        <div role="listitem"><img src="/img/logos/company3.svg" alt="Company3 logo" width="120" height="40"></div>
+        <div role="listitem"><img src="/img/logos/company4.svg" alt="Company4 logo" width="120" height="40"></div>
+        <div role="listitem"><img src="/img/logos/company5.svg" alt="Company5 logo" width="120" height="40"></div>
+        <div role="listitem"><img src="/img/logos/company6.svg" alt="Company6 logo" width="120" height="40"></div>
+      </div>
+    </section>
+
+    <!-- Product features -->
+    <section aria-label="Product features" class="features">
+      <h2>Everything you need to build and operate at scale</h2>
+
+      <div class="feature-grid">
+        <article class="feature-card">
+          <img src="/img/icons/monitoring.svg" alt="" width="48" height="48" aria-hidden="true">
+          <h3>Real-time Monitoring</h3>
+          <p>Get instant visibility into your entire stack. Custom dashboards, anomaly detection, and intelligent alerting.</p>
+          <a href="/products/monitoring">Learn more →</a>
+        </article>
+
+        <article class="feature-card">
+          <img src="/img/icons/tracing.svg" alt="" width="48" height="48" aria-hidden="true">
+          <h3>Distributed Tracing</h3>
+          <p>Trace requests across microservices with automatic instrumentation. See exactly where latency lives.</p>
+          <a href="/products/tracing">Learn more →</a>
+        </article>
+
+        <article class="feature-card">
+          <img src="/img/icons/logs.svg" alt="" width="48" height="48" aria-hidden="true">
+          <h3>Log Management</h3>
+          <p>Aggregate, parse, and query logs from all your services. Live tail, powerful search, and correlation.</p>
+          <a href="/products/logs">Learn more →</a>
+        </article>
+
+        <article class="feature-card">
+          <img src="/img/icons/security.svg" alt="" width="48" height="48" aria-hidden="true">
+          <h3>Security Monitoring</h3>
+          <p>Detect threats, vulnerabilities, and misconfigurations. Compliance reporting and audit trails.</p>
+          <a href="/products/security">Learn more →</a>
+        </article>
+
+        <article class="feature-card">
+          <img src="/img/icons/ci.svg" alt="" width="48" height="48" aria-hidden="true">
+          <h3>CI/CD Analytics</h3>
+          <p>Track build times, test failures, and deployment frequency. Identify bottlenecks in your pipeline.</p>
+          <a href="/products/ci">Learn more →</a>
+        </article>
+
+        <article class="feature-card">
+          <img src="/img/icons/incidents.svg" alt="" width="48" height="48" aria-hidden="true">
+          <h3>Incident Response</h3>
+          <p>Automated runbooks, on-call scheduling, and postmortem templates. Resolve incidents faster.</p>
+          <a href="/products/incidents">Learn more →</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- Metrics / Social proof table -->
+    <section aria-label="Platform metrics" class="metrics">
+      <h2>The numbers speak for themselves</h2>
+      <div class="metrics-grid" role="list">
+        <div role="listitem" class="metric-card">
+          <span class="metric-value">99.99%</span>
+          <span class="metric-label">Platform Uptime</span>
+        </div>
+        <div role="listitem" class="metric-card">
+          <span class="metric-value">2PB+</span>
+          <span class="metric-label">Data Processed Daily</span>
+        </div>
+        <div role="listitem" class="metric-card">
+          <span class="metric-value">&lt;100ms</span>
+          <span class="metric-label">Query Latency P99</span>
+        </div>
+        <div role="listitem" class="metric-card">
+          <span class="metric-value">500+</span>
+          <span class="metric-label">Integrations</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing cards -->
+    <section aria-label="Pricing plans" class="pricing">
+      <h2>Simple, transparent pricing</h2>
+      <div class="pricing-grid">
+        <article class="pricing-card">
+          <h3>Free</h3>
+          <div class="price">$0<span>/month</span></div>
+          <ul>
+            <li>5 team members</li>
+            <li>1 GB logs/day</li>
+            <li>24hr data retention</li>
+            <li>Basic dashboards</li>
+            <li>Community support</li>
+          </ul>
+          <button type="button">Get Started</button>
+        </article>
+
+        <article class="pricing-card featured">
+          <h3>Pro</h3>
+          <div class="price">$29<span>/user/month</span></div>
+          <ul>
+            <li>Unlimited members</li>
+            <li>100 GB logs/day</li>
+            <li>30-day retention</li>
+            <li>Custom dashboards</li>
+            <li>Email + chat support</li>
+            <li>APM + tracing</li>
+            <li>Alerting</li>
+          </ul>
+          <button type="button">Start Free Trial</button>
+        </article>
+
+        <article class="pricing-card">
+          <h3>Enterprise</h3>
+          <div class="price">Custom</div>
+          <ul>
+            <li>Everything in Pro</li>
+            <li>Unlimited logs</li>
+            <li>1-year retention</li>
+            <li>SAML SSO</li>
+            <li>Dedicated support</li>
+            <li>SLA guarantee</li>
+            <li>Audit logs</li>
+            <li>Compliance features</li>
+          </ul>
+          <button type="button">Contact Sales</button>
+        </article>
+      </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section aria-label="Customer testimonials" class="testimonials">
+      <h2>What our customers say</h2>
+      <div class="testimonial-grid">
+        <article class="testimonial-card">
+          <blockquote>"Acme Corp reduced our incident resolution time by 60%. The distributed tracing alone was worth the switch."</blockquote>
+          <div class="testimonial-author">
+            <img src="/img/avatars/person1.jpg" alt="" width="40" height="40" aria-hidden="true">
+            <div>
+              <strong>Sarah Chen</strong>
+              <span>VP Engineering, TechCorp</span>
+            </div>
+          </div>
+        </article>
+        <article class="testimonial-card">
+          <blockquote>"We monitor 50,000 containers across 3 clouds. Acme handles it without breaking a sweat. The dashboards are incredible."</blockquote>
+          <div class="testimonial-author">
+            <img src="/img/avatars/person2.jpg" alt="" width="40" height="40" aria-hidden="true">
+            <div>
+              <strong>Marcus Rodriguez</strong>
+              <span>SRE Lead, CloudScale</span>
+            </div>
+          </div>
+        </article>
+        <article class="testimonial-card">
+          <blockquote>"The CI/CD analytics feature paid for itself in the first week. We cut our build times by 40%."</blockquote>
+          <div class="testimonial-author">
+            <img src="/img/avatars/person3.jpg" alt="" width="40" height="40" aria-hidden="true">
+            <div>
+              <strong>Priya Patel</strong>
+              <span>CTO, FastShip</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Documentation quick links -->
+    <section aria-label="Documentation" class="docs-section">
+      <h2>Get started in minutes</h2>
+      <div class="docs-grid">
+        <article>
+          <h3>Quick Start Guide</h3>
+          <p>Install the agent, configure your first dashboard, and start receiving data in under 5 minutes.</p>
+          <a href="/docs/quickstart">Read the guide →</a>
+        </article>
+        <article>
+          <h3>API Reference</h3>
+          <p>Full REST API documentation with interactive examples. Automate everything programmatically.</p>
+          <a href="/docs/api">Explore the API →</a>
+        </article>
+        <article>
+          <h3>Integration Guides</h3>
+          <p>Connect with AWS, GCP, Azure, Kubernetes, Prometheus, Grafana, and 500+ other tools.</p>
+          <a href="/docs/integrations">Browse integrations →</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- Blog posts -->
+    <section aria-label="Latest blog posts" class="blog-section">
+      <h2>From the blog</h2>
+      <div class="blog-grid">
+        <article>
+          <img src="/img/blog/observability-guide.jpg" alt="Observability guide cover" width="300" height="180">
+          <h3>The Complete Guide to Observability in 2025</h3>
+          <p>Learn about the three pillars of observability and how to implement them effectively.</p>
+          <a href="/blog/observability-guide-2025">Read article →</a>
+        </article>
+        <article>
+          <img src="/img/blog/incident-response.jpg" alt="Incident response cover" width="300" height="180">
+          <h3>Building an Incident Response Playbook</h3>
+          <p>Best practices for reducing MTTR and improving incident response workflows.</p>
+          <a href="/blog/incident-response-playbook">Read article →</a>
+        </article>
+        <article>
+          <img src="/img/blog/zero-downtime.jpg" alt="Zero downtime deployments cover" width="300" height="180">
+          <h3>Achieving Zero-Downtime Deployments</h3>
+          <p>Blue-green, canary, and progressive delivery strategies explained.</p>
+          <a href="/blog/zero-downtime-deployments">Read article →</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- Newsletter CTA -->
+    <section aria-label="Newsletter signup" class="newsletter-section">
+      <h2>Stay up to date</h2>
+      <p>Get the latest news, tutorials, and product updates delivered to your inbox.</p>
+      <form action="/newsletter" method="POST" class="newsletter-form">
+        <input type="hidden" name="csrf" value="csrf_realistic_newsletter_xyz789">
+        <input type="hidden" name="list_id" value="nl_main_2025">
+        <input type="hidden" name="source" value="homepage_cta">
+        <label for="nl-email">Email:</label>
+        <input type="email" id="nl-email" name="email" placeholder="you@company.com" required>
+        <button type="submit">Subscribe</button>
+      </form>
+    </section>
+
+    <!-- Sidebar content -->
+    <aside role="complementary" aria-label="Additional resources">
+      <section aria-label="Upcoming events">
+        <h3>Upcoming Events</h3>
+        <ul>
+          <li><a href="/events/observability-summit">Observability Summit 2025 — June 15-17</a></li>
+          <li><a href="/events/webinar-sre">Webinar: SRE Best Practices — July 3</a></li>
+          <li><a href="/events/workshop-k8s">Workshop: K8s Monitoring — July 20</a></li>
+          <li><a href="/events/meetup-sf">Meetup: SF Bay Area — August 5</a></li>
+        </ul>
+      </section>
+      <section aria-label="Resources">
+        <h3>Resources</h3>
+        <ul>
+          <li><a href="/resources/case-studies">Case Studies</a></li>
+          <li><a href="/resources/whitepapers">Whitepapers</a></li>
+          <li><a href="/resources/webinars">Webinars</a></li>
+          <li><a href="/resources/videos">Video Library</a></li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+
+  <footer role="contentinfo">
+    <div class="footer-grid">
+      <div class="footer-section">
+        <h3>Product</h3>
+        <nav aria-label="Product links">
+          <ul>
+            <li><a href="/products/monitoring">Monitoring</a></li>
+            <li><a href="/products/tracing">Tracing</a></li>
+            <li><a href="/products/logs">Log Management</a></li>
+            <li><a href="/products/security">Security</a></li>
+            <li><a href="/products/ci">CI/CD Analytics</a></li>
+            <li><a href="/products/incidents">Incident Response</a></li>
+            <li><a href="/pricing">Pricing</a></li>
+            <li><a href="/changelog">Changelog</a></li>
+          </ul>
+        </nav>
+      </div>
+      <div class="footer-section">
+        <h3>Resources</h3>
+        <nav aria-label="Resource links">
+          <ul>
+            <li><a href="/docs">Documentation</a></li>
+            <li><a href="/docs/api">API Reference</a></li>
+            <li><a href="/blog">Blog</a></li>
+            <li><a href="/customers">Customers</a></li>
+            <li><a href="/events">Events</a></li>
+            <li><a href="/status">Status</a></li>
+          </ul>
+        </nav>
+      </div>
+      <div class="footer-section">
+        <h3>Company</h3>
+        <nav aria-label="Company links">
+          <ul>
+            <li><a href="/about">About Us</a></li>
+            <li><a href="/careers">Careers</a></li>
+            <li><a href="/press">Press</a></li>
+            <li><a href="/partners">Partners</a></li>
+            <li><a href="/contact">Contact</a></li>
+          </ul>
+        </nav>
+      </div>
+      <div class="footer-section">
+        <h3>Legal</h3>
+        <nav aria-label="Legal links">
+          <ul>
+            <li><a href="/privacy">Privacy Policy</a></li>
+            <li><a href="/terms">Terms of Service</a></li>
+            <li><a href="/cookies">Cookie Policy</a></li>
+            <li><a href="/security">Security</a></li>
+            <li><a href="/gdpr">GDPR</a></li>
+            <li><a href="/accessibility">Accessibility</a></li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <p>Copyright 2025 Acme Corp. All rights reserved.</p>
+      <div class="social-links">
+        <a href="https://twitter.com/acmecorp" aria-label="Twitter">Twitter</a>
+        <a href="https://github.com/acmecorp" aria-label="GitHub">GitHub</a>
+        <a href="https://linkedin.com/company/acmecorp" aria-label="LinkedIn">LinkedIn</a>
+        <a href="https://youtube.com/acmecorp" aria-label="YouTube">YouTube</a>
+      </div>
+      <form action="/language" method="GET" class="language-form">
+        <label for="lang-select">Language:</label>
+        <select id="lang-select" name="lang">
+          <option value="en" selected>English</option>
+          <option value="ja">日本語</option>
+          <option value="de">Deutsch</option>
+          <option value="fr">Français</option>
+          <option value="es">Español</option>
+          <option value="pt">Português</option>
+          <option value="zh">中文</option>
+          <option value="ko">한국어</option>
+        </select>
+      </form>
+    </div>
+  </footer>
+</body>
+</html>

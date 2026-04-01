@@ -1,4 +1,5 @@
 use scraper::{ElementRef, Html, Selector};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use url::Url;
 
@@ -7,27 +8,35 @@ use url::Url;
 // ---------------------------------------------------------------------------
 
 /// The semantic tree extracted from an HTML page.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticTree {
     pub root: SemanticNode,
     pub stats: TreeStats,
 }
 
 /// A node in the semantic tree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticNode {
     pub role: SemanticRole,
     pub name: Option<String>,
     pub tag: String,
+    #[serde(rename = "interactive")]
     pub is_interactive: bool,
+    #[serde(skip_serializing_if = "is_false", default)]
     pub is_disabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<String>,
     pub children: Vec<SemanticNode>,
 }
 
+fn is_false(v: &bool) -> bool {
+    !v
+}
+
 /// Statistics about the semantic tree.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TreeStats {
     pub landmarks: usize,
     pub links: usize,
@@ -73,6 +82,25 @@ pub enum SemanticRole {
     Generic,
     StaticText,
     Other(String),
+}
+
+impl Serialize for SemanticRole {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for SemanticRole {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(parse_role_str(&s))
+    }
 }
 
 impl fmt::Display for SemanticRole {

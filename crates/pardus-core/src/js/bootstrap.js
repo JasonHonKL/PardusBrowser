@@ -364,6 +364,41 @@ class Element {
   }
 }
 
+// ==================== MutationObserver ====================
+
+class MutationObserver {
+  constructor(callback) {
+    this.__callback = callback;
+    this.__id = Deno.core.ops.op_register_observer(0, true, true, false);
+  }
+
+  observe(target, options = {}) {
+    if (target && target.__nodeId) {
+      this.__id = Deno.core.ops.op_register_observer(
+        target.__nodeId,
+        options.childList || false,
+        options.attributes !== false,
+        options.subtree || false
+      );
+    }
+  }
+
+  disconnect() {
+    Deno.core.ops.op_disconnect_observer(this.__id);
+  }
+
+  takeRecords() {
+    return Deno.core.ops.op_take_mutation_records().map(r => ({
+      type: r.type_,
+      target: r.target ? new Element(r.target) : null,
+      addedNodes: (r.added_nodes || []).map(id => new Element(id)),
+      removedNodes: (r.removed_nodes || []).map(id => new Element(id)),
+      attributeName: r.attribute_name || null,
+      oldValue: r.old_value || null,
+    }));
+  }
+}
+
 // ==================== TextNode wrapper ====================
 
 class TextNode {
@@ -404,6 +439,19 @@ class DocumentFragment {
   }
 }
 
+// ==================== DOMContentLoaded ====================
+
+let _DOMContentLoadedFired = false;
+const _DOMContentLoadedListeners = [];
+
+function _fireDOMContentLoaded() {
+    _DOMContentLoadedFired = true;
+    for (const listener of _DOMContentLoadedListeners) {
+        try { listener.callback(new Event('DOMContentLoaded')); } catch (e) {}
+    }
+    _DOMContentLoadedListeners.length = 0;
+}
+
 // ==================== Document object ====================
 
 const document = {
@@ -427,7 +475,13 @@ const document = {
 
   // Event handling
   addEventListener(type, callback, options) {
-    // For document, we use nodeId 0
+    if (type === 'DOMContentLoaded') {
+      _DOMContentLoadedListeners.push({ callback, options });
+      if (_DOMContentLoadedFired) {
+        try { callback(new Event('DOMContentLoaded')); } catch (e) {}
+      }
+      return;
+    }
     const docEl = this.documentElement;
     if (docEl) {
       docEl.addEventListener(type, callback, options);
@@ -435,6 +489,11 @@ const document = {
   },
 
   removeEventListener(type, callback, options) {
+    if (type === 'DOMContentLoaded') {
+      const idx = _DOMContentLoadedListeners.findIndex(l => l.callback === callback);
+      if (idx >= 0) _DOMContentLoadedListeners.splice(idx, 1);
+      return;
+    }
     const docEl = this.documentElement;
     if (docEl) {
       docEl.removeEventListener(type, callback, options);
@@ -554,6 +613,7 @@ globalThis.TextNode = TextNode;
 globalThis.DocumentFragment = DocumentFragment;
 globalThis.Event = Event;
 globalThis.CustomEvent = CustomEvent;
+globalThis.MutationObserver = MutationObserver;
 globalThis.Node = {
   ELEMENT_NODE: 1,
   TEXT_NODE: 3,
@@ -571,3 +631,4 @@ globalThis.self = globalThis;
 globalThis.top = globalThis;
 globalThis.parent = globalThis;
 globalThis.frames = globalThis;
+globalThis.__modules = {};

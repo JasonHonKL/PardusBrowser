@@ -198,6 +198,80 @@ $BIN navigate "$URL" --network-log
 echo ""
 
 # ============================================================
+# INTERACTION TESTS (Hacker News)
+# ============================================================
+
+echo "============================================================"
+echo "  INTERACTION TESTS — Hacker News"
+echo "============================================================"
+echo ""
+
+# --- 21. Click first link on HN ---
+echo "──────────────────────────────────────────────────────────────"
+echo "  21. HN — click first link (navigate to article)"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+$BIN interact "https://news.ycombinator.com" click '.titleline > a' 2>&1 | head -40
+echo ""
+echo "  (output truncated to 40 lines)"
+echo ""
+
+# --- 22. HN — wait for selector ---
+echo "──────────────────────────────────────────────────────────────"
+echo "  22. HN — wait for selector (element present)"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+$BIN interact "https://news.ycombinator.com" wait '.hnname' --timeout-ms 3000
+echo ""
+
+# --- 23. HN — wait for selector (element NOT present) ---
+echo "──────────────────────────────────────────────────────────────"
+echo "  23. HN — wait for selector (element absent, should timeout)"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+$BIN interact "https://news.ycombinator.com" wait '#nonexistent-element-xyz' --timeout-ms 2000
+echo ""
+
+# --- 24. HN — query interactive elements via navigate ---
+echo "──────────────────────────────────────────────────────────────"
+echo "  24. HN — interactive elements overview"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+$BIN navigate "https://news.ycombinator.com" --interactive-only
+echo ""
+
+# --- 25. HN — click "More" link (pagination) ---
+echo "──────────────────────────────────────────────────────────────"
+echo "  25. HN — click 'More' link (page 2)"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+$BIN interact "https://news.ycombinator.com" click '.morelink' 2>&1 | head -30
+echo ""
+echo "  (output truncated to 30 lines)"
+echo ""
+
+# --- 26. HN — submit (search form) ---
+echo "──────────────────────────────────────────────────────────────"
+echo "  26. HN — submit search form with --field"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+$BIN interact "https://news.ycombinator.com" submit 'form' --field 'q=rust+language' --format json 2>&1 | head -60
+echo ""
+echo "  (output truncated to 60 lines)"
+echo ""
+
+# --- 27. HN — scroll via pagination URL ---
+echo "──────────────────────────────────────────────────────────────"
+echo "  27. HN — scroll (URL pagination detection)"
+echo "  Note: HN uses 'news?p=2' — tests ?page pattern detection"
+echo "──────────────────────────────────────────────────────────────"
+echo ""
+$BIN interact "https://news.ycombinator.com/news?p=1" scroll --direction down 2>&1 | head -30
+echo ""
+echo "  (output truncated to 30 lines)"
+echo ""
+
+# ============================================================
 # SUMMARY
 # ============================================================
 
@@ -217,4 +291,12 @@ echo "      - Interactive element detection tested"
 echo "      - JSON output with navigation graph tested"
 echo "      - Network logging tested"
 echo "      - JS execution with thread-based timeout tested"
+echo ""
+echo "    Interaction Tests (Hacker News):"
+echo "      - Click link (navigate to article)"
+echo "      - Wait for selector (present + absent/timeout)"
+echo "      - Interactive elements overview"
+echo "      - Click pagination ('More' link)"
+echo "      - Form submission (search)"
+echo "      - Scroll (URL pagination detection)"
 echo "============================================================"

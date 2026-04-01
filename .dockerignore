@@ -1,0 +1,9 @@
+target
+.git
+*.md
+demo
+bench
+tests
+bench-results
+.DS_Store
+.claude
