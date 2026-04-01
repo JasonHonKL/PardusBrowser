@@ -222,6 +222,56 @@ pardus-browser clean --cache-only
 pardus-browser clean --cache-dir /path/to/cache
 ```
 
+### Tab management
+
+```bash
+# Open a new tab (fetches page and shows summary)
+pardus-browser tab open https://example.com
+
+# Open with JS execution
+pardus-browser tab open https://example.com --js
+
+# List all open tabs
+pardus-browser tab list
+
+# Show active tab info
+pardus-browser tab info
+
+# Navigate the active tab
+pardus-browser tab navigate https://example.com/page2
+```
+
+**Note:** Tab state does not persist across CLI invocations. For persistent tab sessions, use the CDP server or the `Browser` type programmatically.
+
+### Programmatic usage
+
+The `Browser` type unifies navigation, interaction, and tab management into a single API:
+
+```rust
+use pardus_core::Browser;
+
+let mut browser = Browser::new(BrowserConfig::default());
+
+// Navigate (creates a tab automatically)
+let tab = browser.navigate("https://example.com").await?;
+
+// Interact — click updates the tab automatically if navigation occurs
+let result = browser.click("a").await?;
+
+// Chain interactions
+browser.type_text("input[name='q']", "search query")?;
+browser.submit("form", &state).await?;
+
+// Tab management
+let id = browser.create_tab("https://example.com/page2");
+browser.switch_to(id).await?;
+browser.go_back().await?;
+
+// Access current state
+let page = browser.current_page().unwrap();
+let tree = page.semantic_tree();
+```
+
 ### Page interaction
 
 Interact with pages using the `interact` subcommand. Works at the HTTP level — clicks follow links and submit forms, no rendering engine required.
@@ -267,19 +317,19 @@ pardus-browser interact https://example.com wait '.dynamic-content' --js --wait-
 
 ```
 pardus-browser
-├── crates/pardus-core    Core library — HTML parsing, semantic tree, navigation graph, interaction
+├── crates/pardus-core    Core library — Browser type, HTML parsing, semantic tree, navigation graph, interaction, tabs
 ├── crates/pardus-debug   Network debugger — request recording, subresource discovery, table output
 ├── crates/pardus-cdp     CDP WebSocket server — Chrome DevTools Protocol for automation
 └── crates/pardus-cli     CLI binary
 ```
 
-**pardus-core** — The engine. Fetches pages via `reqwest`, parses HTML with `scraper`, builds a semantic tree mapping ARIA roles and interactive states. Provides page interaction (click, type, submit, wait, scroll) at the HTTP level. Includes session persistence (cookies, headers, localStorage), a custom DOM implementation with CSS selector support, and optional JavaScript execution via deno_core. Outputs Markdown, tree, or JSON.
+**pardus-core** — The engine. The `Browser` type is the main entry point — it owns the HTTP client, tab state, and provides navigation + interaction as a single cohesive API. Internally, it fetches pages via `reqwest`, parses HTML with `scraper`, and builds semantic trees mapping ARIA roles and interactive states. Provides page interaction (click, type, submit, wait, scroll) with automatic tab updates on navigation. Includes tab management, history navigation, session persistence (cookies, headers, localStorage), and optional JavaScript execution via deno_core. Outputs Markdown, tree, or JSON.
 
-**pardus-debug** — Network debugging. Records all HTTP requests to a shared `NetworkLog`, discovers subresources from parsed HTML (stylesheets, scripts, images, fonts, media), fetches them in parallel, and formats DevTools-style request tables. Exposes `NetworkRecord`, `ResourceType`, `Initiator`, and `NetworkLog` types for use across crates.
+**pardus-debug** — Network debugging. Records all HTTP requests to a shared `NetworkLog`, discovers subresources from parsed HTML (stylesheets, scripts, images, fonts, media), fetches them in parallel, and formats DevTools-style request tables.
 
-**pardus-cdp** — Chrome DevTools Protocol server. Exposes a WebSocket endpoint for browser automation. Includes domain handlers (DOM, Runtime, Network, Page), event bus, target management, message routing, and session lifecycle. Enables Playwright/Puppeteer-style integration.
+**pardus-cdp** — Chrome DevTools Protocol server. Exposes a WebSocket endpoint for browser automation. Includes domain handlers (DOM, Runtime, Network, Page), event bus, target management, message routing, and session lifecycle.
 
-**pardus-cli** — The `pardus-browser` command-line tool. Provides `navigate`, `interact`, `serve`, and `clean` subcommands.
+**pardus-cli** — The `pardus-browser` command-line tool. Provides `navigate`, `interact`, `tab`, `serve`, and `clean` subcommands. All commands use the unified `Browser` type.
 
 ## Semantic roles detected
 
@@ -320,6 +370,7 @@ pardus-browser
 - [x] **Network debugger** — Request table with subresource discovery and parallel fetching
 - [x] **Session persistence** — Cookies, localStorage, auth headers with size limits
 - [x] **CDP WebSocket server** — Domain handlers, event bus, target management, message routing
+- [x] **Unified Browser API** — Single `Browser` type combining navigation, interaction, and tab management
 
 ### Experimental
 
@@ -339,6 +390,7 @@ pardus-browser
 
 ### Planned
 
+- [ ] **CDP → Browser migration** — Wire CDP domain handlers through unified `Browser` (blocked by `!Send` constraint)
 - [ ] **JS-level interaction** — Click/type/scroll via deno_core DOM when JS is enabled
 - [ ] **Proxy support** — HTTP/SOCKS proxies
 - [ ] **Screenshots** — Optional, for when pixels actually matter

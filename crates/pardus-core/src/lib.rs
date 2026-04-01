@@ -1,4 +1,5 @@
 pub mod app;
+pub mod browser;
 pub mod config;
 pub mod interact;
 #[cfg(feature = "js")]
@@ -11,6 +12,7 @@ pub mod session;
 pub mod tab;
 
 pub use app::App;
+pub use browser::Browser;
 pub use config::BrowserConfig;
 pub use page::Page;
 pub use page::PageSnapshot;
@@ -21,3 +23,5 @@ pub use navigation::graph::NavigationGraph;
 pub use output::tree_formatter::format_tree;
 pub use output::json_formatter::format_json;
 pub use interact::{ElementHandle, FormState, InteractionResult, ScrollDirection};
+pub use tab::tab::TabConfig;
+pub use tab::{Tab, TabId, TabManager};

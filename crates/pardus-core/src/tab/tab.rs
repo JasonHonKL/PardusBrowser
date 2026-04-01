@@ -4,10 +4,15 @@
 //! Multiple tabs share the same App via Arc.
 
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::Page;
 use crate::app::App;
+use crate::config::BrowserConfig;
+use crate::interact::ElementHandle;
+use crate::semantic::tree::SemanticTree;
+use crate::navigation::graph::NavigationGraph;
 
 use super::{TabId, TabState};
 
@@ -83,7 +88,7 @@ impl Tab {
     pub fn new(url: impl Into<String>) -> Self {
         let url = url.into();
         let now = Instant::now();
-        
+
         Self {
             id: TabId::new(),
             url: url.clone(),
@@ -105,18 +110,15 @@ impl Tab {
         tab
     }
 
+    // -------------------------------------------------------------------
+    // Legacy App-based methods (kept for backward compatibility)
+    // -------------------------------------------------------------------
+
     /// Load the page content using the shared App
-    ///
-    /// This fetches the URL and builds the semantic tree.
-    /// Updates state to Ready on success, Error on failure.
-    pub async fn load(
-        &mut self,
-        app: &Arc<App>,
-    ) -> anyhow::Result<&Page> {
+    pub async fn load(&mut self, app: &Arc<App>) -> anyhow::Result<&Page> {
         self.state = TabState::Loading;
         self.last_active = Instant::now();
 
-        // Determine which Page::from_url method to use based on config
         let result = if self.config.js_enabled {
             Page::from_url_with_js(app, &self.url, self.config.wait_ms).await
         } else {
@@ -127,9 +129,7 @@ impl Tab {
             Ok(page) => {
                 self.title = page.title();
                 self.url = page.url.clone();
-                // Update history
                 if self.history_index < self.history.len() - 1 {
-                    // Truncate forward history on new navigation
                     self.history.truncate(self.history_index + 1);
                 }
                 if self.history.last() != Some(&self.url) {
@@ -147,38 +147,23 @@ impl Tab {
         }
     }
 
-    /// Navigate to a new URL within this tab
-    ///
-    /// This is like load() but clears the current page first
-    /// and preserves history.
-    pub async fn navigate(
-        &mut self,
-        app: &Arc<App>,
-        url: &str,
-    ) -> anyhow::Result<&Page> {
+    /// Navigate to a new URL within this tab (App-based)
+    pub async fn navigate(&mut self, app: &Arc<App>, url: &str) -> anyhow::Result<&Page> {
         self.state = TabState::Navigating;
         self.url = url.to_string();
         self.page = None;
         self.load(app).await
     }
 
-    /// Reload the current page
-    pub async fn reload(
-        &mut self,
-        app: &Arc<App>,
-    ) -> anyhow::Result<&Page> {
+    /// Reload the current page (App-based)
+    pub async fn reload(&mut self, app: &Arc<App>) -> anyhow::Result<&Page> {
         self.state = TabState::Loading;
         self.page = None;
         self.load(app).await
     }
 
-    /// Go back in history
-    ///
-    /// Returns true if navigation occurred, false if at beginning of history
-    pub async fn go_back(
-        &mut self,
-        app: &Arc<App>,
-    ) -> anyhow::Result<Option<&Page>> {
+    /// Go back in history (App-based)
+    pub async fn go_back(&mut self, app: &Arc<App>) -> anyhow::Result<Option<&Page>> {
         if self.history_index > 0 {
             self.history_index -= 1;
             self.url = self.history[self.history_index].clone();
@@ -189,13 +174,8 @@ impl Tab {
         }
     }
 
-    /// Go forward in history
-    ///
-    /// Returns true if navigation occurred, false if at end of history
-    pub async fn go_forward(
-        &mut self,
-        app: &Arc<App>,
-    ) -> anyhow::Result<Option<&Page>> {
+    /// Go forward in history (App-based)
+    pub async fn go_forward(&mut self, app: &Arc<App>) -> anyhow::Result<Option<&Page>> {
         if self.history_index < self.history.len() - 1 {
             self.history_index += 1;
             self.url = self.history[self.history_index].clone();
@@ -206,19 +186,99 @@ impl Tab {
         }
     }
 
-    /// Get the semantic tree of the current page
-    ///
-    /// Returns None if page not loaded or in error state
-    pub fn semantic_tree(&self) -> Option<crate::semantic::tree::SemanticTree> {
-        self.page.as_ref().map(|p| p.semantic_tree())
+    // -------------------------------------------------------------------
+    // Browser integration methods (take reqwest::Client directly)
+    // -------------------------------------------------------------------
+
+    /// Load the page using a raw reqwest client.
+    pub async fn load_with_client(
+        &mut self,
+        client: &reqwest::Client,
+        network_log: &Arc<Mutex<pardus_debug::NetworkLog>>,
+        js_enabled: bool,
+        wait_ms: u32,
+    ) -> anyhow::Result<&Page> {
+        self.state = TabState::Loading;
+        self.last_active = Instant::now();
+
+        let app = Arc::new(App {
+            http_client: client.clone(),
+            config: BrowserConfig::default(),
+            network_log: network_log.clone(),
+        });
+
+        let result = if js_enabled {
+            Page::from_url_with_js(&app, &self.url, wait_ms).await
+        } else {
+            Page::from_url(&app, &self.url).await
+        };
+
+        match result {
+            Ok(page) => {
+                self.title = page.title();
+                self.url = page.url.clone();
+                if self.history_index < self.history.len() - 1 {
+                    self.history.truncate(self.history_index + 1);
+                }
+                if self.history.last() != Some(&self.url) {
+                    self.history.push(self.url.clone());
+                    self.history_index = self.history.len() - 1;
+                }
+                self.state = TabState::Ready;
+                self.page = Some(page);
+                Ok(self.page.as_ref().unwrap())
+            }
+            Err(e) => {
+                self.state = TabState::Error(e.to_string());
+                Err(e)
+            }
+        }
     }
 
-    /// Get the navigation graph of the current page
-    ///
-    /// Returns None if page not loaded
-    pub fn navigation_graph(&self) -> Option<crate::navigation::graph::NavigationGraph> {
-        self.page.as_ref().map(|p| p.navigation_graph())
+    /// Navigate to a new URL using a raw reqwest client.
+    pub async fn navigate_with_client(
+        &mut self,
+        client: &reqwest::Client,
+        network_log: &Arc<Mutex<pardus_debug::NetworkLog>>,
+        url: &str,
+        js_enabled: bool,
+        wait_ms: u32,
+    ) -> anyhow::Result<&Page> {
+        self.state = TabState::Navigating;
+        self.url = url.to_string();
+        self.page = None;
+        self.load_with_client(client, network_log, js_enabled, wait_ms).await
     }
+
+    /// Reload using a raw reqwest client.
+    pub async fn reload_with_client(
+        &mut self,
+        client: &reqwest::Client,
+        network_log: &Arc<Mutex<pardus_debug::NetworkLog>>,
+    ) -> anyhow::Result<&Page> {
+        self.state = TabState::Loading;
+        self.page = None;
+        self.load_with_client(client, network_log, self.config.js_enabled, self.config.wait_ms).await
+    }
+
+    /// Update the tab with a new page (e.g., after click navigation).
+    pub fn update_page(&mut self, page: Page) {
+        self.title = page.title();
+        self.url = page.url.clone();
+        if self.history_index < self.history.len() - 1 {
+            self.history.truncate(self.history_index + 1);
+        }
+        if self.history.last() != Some(&self.url) {
+            self.history.push(self.url.clone());
+            self.history_index = self.history.len() - 1;
+        }
+        self.state = TabState::Ready;
+        self.page = Some(page);
+    }
+
+    // -------------------------------------------------------------------
+    // Convenience query methods (delegate to Page)
+    // -------------------------------------------------------------------
 
     /// Check if the tab can go back in history
     pub fn can_go_back(&self) -> bool {
@@ -251,6 +311,31 @@ impl Tab {
             can_go_forward: self.can_go_forward(),
             history_len: self.history.len(),
         }
+    }
+
+    /// Query the page for the first element matching a CSS selector.
+    pub fn query(&self, selector: &str) -> Option<ElementHandle> {
+        self.page.as_ref()?.query(selector)
+    }
+
+    /// Query the page for all elements matching a CSS selector.
+    pub fn query_all(&self, selector: &str) -> Vec<ElementHandle> {
+        self.page.as_ref().map(|p| p.query_all(selector)).unwrap_or_default()
+    }
+
+    /// Get the semantic tree of the current page.
+    pub fn semantic_tree(&self) -> Option<SemanticTree> {
+        self.page.as_ref().map(|p| p.semantic_tree())
+    }
+
+    /// Get the navigation graph of the current page.
+    pub fn navigation_graph(&self) -> Option<NavigationGraph> {
+        self.page.as_ref().map(|p| p.navigation_graph())
+    }
+
+    /// Get all interactive elements from the current page.
+    pub fn interactive_elements(&self) -> Vec<ElementHandle> {
+        self.page.as_ref().map(|p| p.interactive_elements()).unwrap_or_default()
     }
 }
 

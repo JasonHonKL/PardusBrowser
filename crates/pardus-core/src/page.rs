@@ -57,6 +57,8 @@ impl Page {
 
         record_main_request(app, url, &final_url, status, &content_type, body_size, timing_ms, &resp_headers);
 
+        validate_content_type_pub(content_type.as_deref(), &final_url)?;
+
         let html = Html::parse_document(&body);
         let base_url = Self::extract_base_url(&html, &final_url);
 
@@ -93,6 +95,8 @@ impl Page {
         let timing_ms = start.elapsed().as_millis();
 
         record_main_request(app, url, &final_url, status, &content_type, body_size, timing_ms, &resp_headers);
+
+        validate_content_type_pub(content_type.as_deref(), &final_url)?;
 
         let base_url = Self::extract_base_url(&Html::parse_document(&body), &final_url);
         let final_body = crate::js::execute_js(&body, &base_url, wait_ms).await?;
@@ -206,6 +210,19 @@ impl Page {
         }
     }
 
+    /// Create a shallow clone by re-parsing the HTML source.
+    /// Needed because `scraper::Html` is not `Clone`.
+    pub fn clone_shallow(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            status: self.status,
+            content_type: self.content_type.clone(),
+            html: Html::parse_document(&self.html.html()),
+            base_url: self.base_url.clone(),
+        }
+    }
+
+
     pub fn navigation_graph(&self) -> NavigationGraph {
         NavigationGraph::build(&self.html, &self.url)
     }
@@ -233,6 +250,57 @@ impl Page {
         log: &Arc<std::sync::Mutex<pardus_debug::NetworkLog>>,
     ) {
         pardus_debug::fetch::fetch_subresources(client, log, 6).await;
+    }
+
+    /// Resolve a URL relative to this page's base URL, preserving
+    /// query parameters from the current URL when the relative URL
+    /// contains only a query component (e.g., `?page=2`).
+    ///
+    /// Standard `Url::join` would replace all existing query params
+    /// with the new ones. This method merges them instead.
+    pub fn resolve_url_preserve_query(&self, href: &str) -> String {
+        let base = match Url::parse(&self.base_url) {
+            Ok(u) => u,
+            Err(_) => return href.to_string(),
+        };
+
+        // If href is a query-only string (starts with "?"), merge params
+        if href.starts_with('?') {
+            let mut merged = base.clone();
+            let relative = match Url::parse(&format!("https://dummy.com{}", href)) {
+                Ok(u) => u,
+                Err(_) => return base.join(href)
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|_| href.to_string()),
+            };
+
+            let mut pairs: Vec<(String, String)> = base
+                .query_pairs()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+
+            for (k, v) in relative.query_pairs() {
+                if let Some(existing) = pairs.iter_mut().find(|(ek, _)| *ek == k) {
+                    existing.1 = v.to_string();
+                } else {
+                    pairs.push((k.to_string(), v.to_string()));
+                }
+            }
+
+            {
+                let mut qp = merged.query_pairs_mut();
+                qp.clear();
+                for (k, v) in &pairs {
+                    qp.append_pair(k, v);
+                }
+            }
+            return merged.to_string();
+        }
+
+        // For all other hrefs, standard resolution
+        base.join(href)
+            .map(|u| u.to_string())
+            .unwrap_or_else(|_| href.to_string())
     }
 
     fn extract_base_url(html: &Html, fallback: &str) -> String {
@@ -302,6 +370,27 @@ fn http_status_text(status: u16) -> String {
         503 => "Service Unavailable",
         _ => "",
     }.to_string()
+}
+
+/// Validate that the response content type is HTML-compatible.
+/// Returns an error for binary or non-text responses (e.g. audio, images).
+pub(crate) fn validate_content_type_pub(content_type: Option<&str>, url: &str) -> anyhow::Result<()> {
+    if let Some(ct) = content_type {
+        let ct_lower = ct.to_lowercase();
+        let is_html = ct_lower.contains("text/html")
+            || ct_lower.contains("application/xhtml")
+            || ct_lower.contains("application/xml");
+        let is_text = ct_lower.starts_with("text/");
+
+        if !is_html && !is_text {
+            anyhow::bail!(
+                "Unsupported content type '{}' for URL '{}'. Expected HTML or text content.",
+                ct.split(';').next().unwrap_or(ct).trim(),
+                url
+            );
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

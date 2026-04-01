@@ -93,6 +93,12 @@ enum Commands {
         timeout: u64,
     },
 
+    /// Tab management commands
+    Tab {
+        #[command(subcommand)]
+        action: TabAction,
+    },
+
     /// Wipe all cache, cookies, and storage
     Clean {
         /// Clean specific directory
@@ -158,6 +164,27 @@ pub enum OutputFormatArg {
     Json,
 }
 
+#[derive(Clone, Subcommand)]
+pub enum TabAction {
+    /// List all open tabs
+    List,
+    /// Open a new tab with a URL
+    Open {
+        /// URL to open
+        url: String,
+        /// Enable JavaScript execution
+        #[arg(long)]
+        js: bool,
+    },
+    /// Show active tab info
+    Info,
+    /// Navigate active tab to a new URL
+    Navigate {
+        /// URL to navigate to
+        url: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -202,6 +229,24 @@ async fn main() -> Result<()> {
             cache_only,
         } => {
             commands::clean::run(cache_dir, cookies_only, cache_only)?;
+        }
+        Commands::Tab { action } => {
+            match action {
+                TabAction::List => {
+                    let browser = pardus_core::Browser::new(pardus_core::BrowserConfig::default());
+                    commands::tab::list(&browser, OutputFormatArg::Md).await?;
+                }
+                TabAction::Open { url, js } => {
+                    commands::tab::open(&url, js).await?;
+                }
+                TabAction::Info => {
+                    let browser = pardus_core::Browser::new(pardus_core::BrowserConfig::default());
+                    commands::tab::info(&browser, OutputFormatArg::Md)?;
+                }
+                TabAction::Navigate { url } => {
+                    commands::tab::navigate(&url).await?;
+                }
+            }
         }
     }
 

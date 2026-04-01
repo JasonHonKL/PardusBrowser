@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::OutputFormatArg;
@@ -20,25 +19,14 @@ pub async fn run(
         0, 0, url
     );
 
-    let app = Arc::new(pardus_core::App::new(pardus_core::BrowserConfig::default()));
-    let page = if js {
+    let mut browser = pardus_core::Browser::new(pardus_core::BrowserConfig::default());
+
+    if js {
         println!("       JS execution enabled — executing scripts…");
-        match pardus_core::Page::from_url_with_js(&app, url, wait_ms).await {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Error fetching {url}: {e}");
-                anyhow::bail!("Failed to fetch URL: {e}");
-            }
-        }
+        browser.navigate_with_js(url, wait_ms).await?;
     } else {
-        match pardus_core::Page::from_url(&app, url).await {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Error fetching {url}: {e}");
-                anyhow::bail!("Failed to fetch URL: {e}");
-            }
-        }
-    };
+        browser.navigate(url).await?;
+    }
 
     let elapsed_connected = start.elapsed().as_secs();
     let ms_connected = start.elapsed().as_millis() % 1000 / 10;
@@ -47,9 +35,15 @@ pub async fn run(
         elapsed_connected, ms_connected
     );
 
+    // Clone references before borrowing page
+    let net_log = browser.network_log.clone();
+    let http_client = browser.http_client.clone();
+
+    let page = browser.current_page().unwrap();
+
     if network_log {
-        page.discover_subresources(&app.network_log);
-        pardus_core::Page::fetch_subresources(&app.http_client, &app.network_log).await;
+        page.discover_subresources(&net_log);
+        pardus_core::Page::fetch_subresources(&http_client, &net_log).await;
     }
 
     let tree = page.semantic_tree();
@@ -88,7 +82,7 @@ pub async fn run(
             };
 
             let network = if network_log {
-                let log = app.network_log.lock().unwrap();
+                let log = net_log.lock().unwrap();
                 Some(pardus_debug::formatter::NetworkLogJson::from_log(&log))
             } else {
                 None
@@ -117,7 +111,7 @@ pub async fn run(
     );
 
     if network_log {
-        let log = app.network_log.lock().unwrap();
+        let log = net_log.lock().unwrap();
         let table = pardus_debug::formatter::format_table_with_initiator(&log);
         for line in table.lines() {
             if !line.trim().is_empty() {

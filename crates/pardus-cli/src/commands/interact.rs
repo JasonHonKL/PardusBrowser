@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::sync::Arc;
 use std::time::Instant;
 
 use pardus_core::{FormState, InteractionResult, ScrollDirection};
@@ -14,31 +13,26 @@ pub async fn run(
     wait_ms: u32,
 ) -> Result<()> {
     let start = Instant::now();
-    let app = Arc::new(pardus_core::App::new(pardus_core::BrowserConfig::default()));
+    let mut browser = pardus_core::Browser::new(pardus_core::BrowserConfig::default());
 
-    // Fetch the page
-    let page = if js {
-        pardus_core::Page::from_url_with_js(&app, url, wait_ms).await?
+    // Navigate first
+    if js {
+        browser.navigate_with_js(url, wait_ms).await?;
     } else {
-        pardus_core::Page::from_url(&app, url).await?
-    };
+        browser.navigate(url).await?;
+    }
 
     let elapsed = start.elapsed().as_millis();
     eprintln!("Connected in {}ms", elapsed);
 
     match action {
         InteractAction::Click { selector } => {
-            let result = app.click_selector(&page, &selector).await?;
+            let result = browser.click(&selector).await?;
             output_result(&result, &format);
         }
         InteractAction::Type { selector, value } => {
-            match page.query(&selector) {
-                Some(handle) => {
-                    let result = pardus_core::App::type_text(&page, &handle, &value)?;
-                    output_result(&result, &format);
-                }
-                None => eprintln!("Element not found: {}", selector),
-            }
+            let result = browser.type_text(&selector, &value)?;
+            output_result(&result, &format);
         }
         InteractAction::Submit { selector, field } => {
             let mut state = FormState::new();
@@ -50,16 +44,14 @@ pub async fn run(
                     eprintln!("Invalid field format '{}', expected name=value", f);
                 }
             }
-            let result = app.submit_form(&page, &selector, &state).await?;
+            let result = browser.submit(&selector, &state).await?;
             output_result(&result, &format);
         }
         InteractAction::Wait {
             selector,
             timeout_ms,
         } => {
-            let result = app
-                .wait_for_selector(&page, &selector, timeout_ms, 500)
-                .await?;
+            let result = browser.wait_for(&selector, timeout_ms).await?;
             output_result(&result, &format);
         }
         InteractAction::Scroll { direction } => {
@@ -69,7 +61,7 @@ pub async fn run(
                 "to-bottom" => ScrollDirection::ToBottom,
                 _ => ScrollDirection::Down,
             };
-            let result = app.scroll(&page, dir).await?;
+            let result = browser.scroll(dir).await?;
             output_result(&result, &format);
         }
     }

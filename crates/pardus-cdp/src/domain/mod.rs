@@ -53,21 +53,8 @@ impl DomainContext {
 
     /// Fetch a URL, store the result.
     pub async fn navigate(&self, target_id: &str, url: &str) -> anyhow::Result<()> {
-        let response = self.app.http_client.get(url).send().await?;
-        let html = response.text().await?;
-
-        let title = extract_title_from_html(&html);
-
-        let entry = TargetEntry {
-            url: url.to_string(),
-            html: Some(html),
-            title,
-            js_enabled: false,
-        };
-
-        let mut targets = self.targets.lock().await;
-        targets.insert(target_id.to_string(), entry);
-
+        let page = pardus_core::Page::from_url(&self.app, url).await?;
+        self.update_target(target_id, &page);
         Ok(())
     }
 
@@ -133,11 +120,3 @@ pub mod performance;
 pub mod runtime;
 pub mod security;
 pub mod target;
-
-/// Extract title from HTML using a simple regex.
-fn extract_title_from_html(html: &str) -> Option<String> {
-    // Simple regex to extract <title> content
-    let start = html.find("<title>")? + 7;
-    let end = html.find("</title>")?;
-    Some(html[start..end].to_string())
-}

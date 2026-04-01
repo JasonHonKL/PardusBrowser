@@ -205,6 +205,7 @@ async fn submit_get(
     let mut url = Url::parse(action_url)?;
     {
         let mut query_pairs = url.query_pairs_mut();
+        query_pairs.clear();
         for (name, value) in fields {
             query_pairs.append_pair(name, value);
         }
@@ -235,6 +236,7 @@ async fn submit_post_urlencoded(
         .map(|s| s.to_string());
 
     let body = response.text().await?;
+    crate::page::validate_content_type_pub(content_type.as_deref(), &final_url)?;
     let html = scraper::Html::parse_document(&body);
     let base_url = Page::extract_base_url_static(&html, &final_url);
 
