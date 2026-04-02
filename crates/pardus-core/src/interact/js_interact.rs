@@ -314,7 +314,7 @@ pub async fn js_click(
     );
 
     let timeout = INTERACTION_TIMEOUT_MS;
-    let user_agent = app.config.effective_user_agent().to_string();
+    let user_agent = app.config.read().effective_user_agent().to_string();
 
     let thread_result = execute_interaction_thread(
         html,
@@ -525,7 +525,7 @@ pub async fn js_submit(
         base_url.clone(),
         interaction_js,
         INTERACTION_TIMEOUT_MS,
-        app.config.effective_user_agent().to_string(),
+        app.config.read().effective_user_agent().to_string(),
         None,
     );
 
@@ -994,7 +994,10 @@ mod tests {
 
     #[test]
     fn test_window_location_href_detection() {
-        let html = test_page_html(r#"<button id="btn" onclick="window.location.href='/new-page'">Go</button>"#);
+        // Step 1: Test that inline handler with window.location.href fires
+        let html = test_page_html(
+            r#"<button id="btn" onclick="document.getElementById('out').textContent='fired'; window.location.href='/new-page'">Go</button><span id="out">waiting</span>"#
+        );
 
         let interaction_js = r#"
             var btn = document.querySelector('#btn');
@@ -1012,6 +1015,8 @@ mod tests {
 
         assert!(result.is_some());
         let r = result.unwrap();
+        eprintln!("[DEBUG] navigation_href: {:?}", r.navigation_href);
+        eprintln!("[DEBUG] html: {:?}", r.html);
         assert_eq!(
             r.navigation_href.as_deref(),
             Some("/new-page"),

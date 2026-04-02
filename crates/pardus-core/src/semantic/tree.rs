@@ -32,6 +32,13 @@ pub struct SemanticNode {
     /// Used by AI agents to reference clickable elements like "click #1"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub element_id: Option<usize>,
+    /// Unique CSS selector to locate this element in the DOM.
+    /// Used to reliably resolve element_id back to the actual element.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector: Option<String>,
+    /// The input type attribute, if applicable (e.g., "password", "email", "search").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_type: Option<String>,
     pub children: Vec<SemanticNode>,
 }
 
@@ -177,6 +184,7 @@ impl SemanticTree {
         let mut stats = TreeStats::default();
         let mut builder = TreeBuilder {
             base_url,
+            html,
             stats: &mut stats,
             next_element_id: 1,
         };
@@ -197,6 +205,7 @@ fn count_nodes(node: &SemanticNode) -> usize {
 
 struct TreeBuilder<'a> {
     base_url: &'a str,
+    html: &'a Html,
     stats: &'a mut TreeStats,
     next_element_id: usize,
 }
@@ -213,6 +222,8 @@ impl<'a> TreeBuilder<'a> {
             href: None,
             action: None,
             element_id: None,
+            selector: None,
+            input_type: None,
             children: Vec::new(),
         };
 
@@ -304,11 +315,21 @@ impl<'a> TreeBuilder<'a> {
             self.stats.actions += 1;
         }
 
-        // Assign element ID to interactive elements
-        let element_id = if is_interactive && !is_disabled {
+        // Assign element ID to interactive elements (including disabled ones)
+        let element_id = if is_interactive {
             let id = self.next_element_id;
             self.next_element_id += 1;
             Some(id)
+        } else {
+            None
+        };
+
+        // Compute unique CSS selector for this element
+        let selector = build_unique_selector(el, self.html);
+
+        // Extract input type for input elements
+        let input_type = if tag_str == "input" {
+            el.value().attr("type").map(|s| s.to_string())
         } else {
             None
         };
@@ -322,6 +343,8 @@ impl<'a> TreeBuilder<'a> {
             href,
             action,
             element_id,
+            selector: Some(selector),
+            input_type,
             children: child_nodes,
         })
     }
@@ -372,6 +395,16 @@ impl<'a> TreeBuilder<'a> {
             }
         }
 
+        // name attribute for inputs (fallback)
+        if matches!(tag, "input" | "textarea" | "select") {
+            if let Some(n) = el.value().attr("name") {
+                let trimmed = n.trim().to_string();
+                if !trimmed.is_empty() {
+                    return Some(trimmed);
+                }
+            }
+        }
+
         // value for submit/reset buttons
         if tag == "input" {
             let input_type = el.value().attr("type").unwrap_or("text");
@@ -387,6 +420,16 @@ impl<'a> TreeBuilder<'a> {
                     "reset" => "Reset".to_string(),
                     _ => "Button".to_string(),
                 });
+            }
+        }
+
+        // fallback: use the name attribute for inputs, selects, and textareas
+        if matches!(tag, "input" | "select" | "textarea") {
+            if let Some(name_attr) = el.value().attr("name") {
+                let trimmed = name_attr.trim().to_string();
+                if !trimmed.is_empty() {
+                    return Some(trimmed);
+                }
             }
         }
 
@@ -410,6 +453,7 @@ impl<'a> TreeBuilder<'a> {
             "section" if has_name => SemanticRole::Region,
             "article" => SemanticRole::Article,
             "form" if has_name => SemanticRole::Form,
+            "form" => SemanticRole::Form,
 
             "h1" => SemanticRole::Heading { level: 1 },
             "h2" => SemanticRole::Heading { level: 2 },
@@ -535,4 +579,135 @@ fn parse_role_str(s: &str) -> SemanticRole {
         "dialog" => SemanticRole::Dialog,
         _ => SemanticRole::Other(s.to_string()),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Unique Selector Builder
+// ---------------------------------------------------------------------------
+
+/// Build a unique CSS selector for an element.
+///
+/// - If the element has an `id`, uses `#id`.
+/// - Otherwise, prefers attribute-based selectors like `input[name="foo"]`
+///   if they are unique in the document.
+/// - Falls back to a structural path: `body > div:nth-child(2) > form > input`
+fn build_unique_selector(el: &ElementRef, html: &Html) -> String {
+    // Prefer id
+    if let Some(id) = el.value().attr("id") {
+        return format!("#{}", css_escape_id(id));
+    }
+
+    // Try name-based selector
+    if let Some(name) = el.value().attr("name") {
+        let tag = el.value().name();
+        let candidate = format!("{}[name=\"{}\"]", tag, name);
+        let is_unique = match Selector::parse(&candidate) {
+            Ok(sel) => html.select(&sel).count() == 1,
+            Err(_) => false,
+        };
+        if is_unique {
+            return candidate;
+        }
+    }
+
+    // Try href-based selector for links
+    if let Some(href) = el.value().attr("href") {
+        let tag = el.value().name();
+        let escaped = css_escape_attr(href);
+        let candidate = format!("{}[href=\"{}\"]", tag, escaped);
+        // Check if this selector is valid and unique
+        let is_unique = match Selector::parse(&candidate) {
+            Ok(sel) => html.select(&sel).count() == 1,
+            Err(_) => false,
+        };
+        if is_unique {
+            return candidate;
+        }
+    }
+
+    // Try type + name combination for inputs
+    if let Some(itype) = el.value().attr("type") {
+        let tag = el.value().name();
+        let candidate = format!("{}[type=\"{}\"]", tag, itype);
+        let is_unique = match Selector::parse(&candidate) {
+            Ok(sel) => html.select(&sel).count() == 1,
+            Err(_) => false,
+        };
+        if is_unique {
+            return candidate;
+        }
+    }
+
+    // Build structural path
+    build_structural_selector(el)
+}
+
+fn css_escape_id(id: &str) -> String {
+    if id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        id.to_string()
+    } else {
+        id.chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c.to_string()
+                } else {
+                    format!("\\{:X}", c as u32)
+                }
+            })
+            .collect()
+    }
+}
+
+fn css_escape_attr(s: &str) -> String {
+    // For attribute values, we don't need to escape # since we're inside quotes
+    // We just need to escape the quote character and backslash
+    s.replace('\\', "\\\\")
+     .replace('"', "\\\"")
+}
+
+fn build_structural_selector(el: &ElementRef) -> String {
+    let mut segments = Vec::new();
+    let mut current = Some(*el);
+
+    while let Some(node) = current {
+        let tag = node.value().name().to_lowercase();
+
+        if tag == "body" || tag == "html" {
+            break;
+        }
+
+        // Count position among all sibling elements
+        let nth = count_element_position(&node);
+        segments.push(format!("{}:nth-child({})", tag, nth));
+
+        current = node.parent().and_then(ElementRef::wrap);
+    }
+
+    segments.reverse();
+    if segments.is_empty() {
+        el.value().name().to_string()
+    } else {
+        segments.join(" > ")
+    }
+}
+
+/// Count the 1-based position of this element among its parent's children.
+fn count_element_position(el: &ElementRef) -> usize {
+    if let Some(parent) = el.parent().and_then(ElementRef::wrap) {
+        let target_id = el.value().attr("id");
+        let target_name = el.value().name();
+        let mut count = 0;
+
+        for child in parent.children() {
+            if let Some(child_el) = ElementRef::wrap(child) {
+                count += 1;
+                if child_el.value().name() == target_name
+                    && child_el.value().attr("id") == target_id
+                {
+                    return count;
+                }
+            }
+        }
+    }
+    1
 }

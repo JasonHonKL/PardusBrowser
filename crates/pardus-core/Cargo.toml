@@ -9,9 +9,11 @@ scraper = "0.22"
 
 # Async & HTTP
 tokio = { workspace = true }
-reqwest = { workspace = true, features = ["stream"] }
+reqwest = { workspace = true, features = ["stream", "socks"] }
 url = { workspace = true }
 cookie_store = "0.21"
+tokio-rustls = "0.26"
+sha2 = "0.10"
 
 # Serialization
 serde = { workspace = true }
@@ -62,7 +64,7 @@ tungstenite = "0.26"
 h2 = { workspace = true, optional = true }
 
 [features]
-default = ["js"]
+default = []
 js = ["deno_core", "reqwest/stream"]
 h2-push = ["h2"]
 

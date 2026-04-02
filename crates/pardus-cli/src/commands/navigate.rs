@@ -2,8 +2,9 @@ use anyhow::Result;
 use std::time::Instant;
 
 use crate::OutputFormatArg;
+use pardus_core::BrowserConfig;
 
-pub async fn run(
+pub async fn run_with_config(
     url: &str,
     format: OutputFormatArg,
     interactive_only: bool,
@@ -11,6 +12,7 @@ pub async fn run(
     js: bool,
     wait_ms: u32,
     network_log: bool,
+    config: BrowserConfig,
 ) -> Result<()> {
     let start = Instant::now();
 
@@ -19,7 +21,7 @@ pub async fn run(
         0, 0, url
     );
 
-    let mut browser = pardus_core::Browser::new(pardus_core::BrowserConfig::default());
+    let mut browser = pardus_core::Browser::new(config);
 
     if js {
         println!("       JS execution enabled — executing scripts…");
@@ -73,6 +75,11 @@ pub async fn run(
                     println!("       {}", line);
                 }
             }
+        }
+        OutputFormatArg::Llm => {
+            let output = pardus_core::output::llm_formatter::format_llm(&tree);
+            println!("{}", output);
+            return Ok(());
         }
         OutputFormatArg::Json => {
             let nav_graph = if with_nav {
@@ -187,6 +194,8 @@ fn filter_interactive(tree: &pardus_core::SemanticTree) -> pardus_core::Semantic
         href: None,
         action: None,
         element_id: None,
+        selector: None,
+        input_type: None,
         children: vec![],
     });
 

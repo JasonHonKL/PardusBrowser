@@ -109,6 +109,32 @@ pub async fn submit_form(
     // Validate action URL against security policy (SSRF protection)
     app.validate_url(&action_url)?;
 
+    // CSP: check form-action directive
+    if let Some(ref csp) = page.csp {
+        if let Ok(action_parsed) = Url::parse(&action_url) {
+            if let Ok(base_parsed) = Url::parse(&page.base_url) {
+                let origin = base_parsed.origin();
+                let check = csp.check_form_action(&origin, &action_parsed);
+                if !check.allowed {
+                    if let Some(ref directive) = check.violated_directive {
+                        crate::csp::report_violation(&crate::csp::CspViolation {
+                            document_uri: page.url.clone(),
+                            blocked_uri: action_url.clone(),
+                            effective_directive: directive.clone(),
+                            original_policy: String::new(),
+                            disposition: crate::csp::Disposition::Enforce,
+                            status_code: page.status,
+                        });
+                    }
+                    anyhow::bail!(
+                        "Form submission to '{}' blocked by CSP form-action",
+                        action_url
+                    );
+                }
+            }
+        }
+    }
+
     // Collect all form fields from HTML
     let html_fields = collect_form_fields(&form_el);
 
@@ -276,6 +302,7 @@ async fn submit_post_urlencoded(
         content_type,
         html,
         base_url,
+        csp: None,
     })
 }
 

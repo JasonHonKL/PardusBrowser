@@ -20,8 +20,14 @@ impl CdpDomainHandler for CssDomain {
         ctx: &DomainContext,
     ) -> HandleResult {
         match method {
+            "enable" => HandleResult::Ack,
+            "disable" => HandleResult::Ack,
             "getComputedStyleForNode" => {
-                // No renderer - return empty computed styles.
+                let node_id = params["nodeId"].as_i64().unwrap_or(-1);
+                let nm = ctx.node_map.lock().await;
+                let _selector = nm.get_selector(node_id).map(|s| s.to_string());
+                drop(nm);
+
                 HandleResult::Success(serde_json::json!({
                     "computedStyle": []
                 }))
@@ -29,25 +35,116 @@ impl CdpDomainHandler for CssDomain {
             "getInlineStylesForNode" => {
                 let node_id = params["nodeId"].as_i64().unwrap_or(-1);
                 let nm = ctx.node_map.lock().await;
-                let _selector = nm.get_selector(node_id).map(|s| s.to_string());
+                let selector = nm.get_selector(node_id).map(|s| s.to_string());
                 drop(nm);
 
-                // ElementHandle doesn't expose style directly - return empty.
+                let mut properties = Vec::new();
+                if let Some(sel) = selector {
+                    let target_id = "default";
+                    if let Some(html) = ctx.get_html(target_id).await {
+                        if let Some(style) = extract_inline_style(&html, &sel) {
+                            for (prop, val) in style {
+                                properties.push(serde_json::json!({
+                                    "name": prop,
+                                    "value": val,
+                                }));
+                            }
+                        }
+                    }
+                }
+
                 HandleResult::Success(serde_json::json!({
                     "inlineStyle": {
-                        "cssProperties": [],
+                        "cssProperties": properties,
                         "shorthandEntries": [],
                         "styleSheetId": format!("inline-{}", node_id),
-                    }
+                    },
+                    "attributesStyle": null,
                 }))
             }
             "getMatchedStylesForNode" => {
                 HandleResult::Success(serde_json::json!({
                     "matchedCSSRules": [],
+                    "inherited": [],
                     "inlineStyle": null,
+                    "attributesStyle": null,
+                    "cssKeyframesRules": [],
+                    "positionFallbackRules": [],
+                    "propertyRules": [],
+                    "pseudoElements": [],
+                    "pseudoElementsMatches": [],
+                    "relatedNodes": [],
+                    "cssLayers": [],
                 }))
             }
+            "collectClassNames" => {
+                let _style_sheet_id = params["styleSheetId"].as_str().unwrap_or("");
+                HandleResult::Success(serde_json::json!({ "classNames": [] }))
+            }
+            "getStyleSheetText" => {
+                let _style_sheet_id = params["styleSheetId"].as_str().unwrap_or("");
+                HandleResult::Error(crate::protocol::message::CdpErrorResponse {
+                    id: 0,
+                    error: crate::error::CdpErrorBody {
+                        code: crate::error::SERVER_ERROR,
+                        message: "Stylesheet text not available".to_string(),
+                    },
+                    session_id: None,
+                })
+            }
+            "setStyleSheetText" => HandleResult::Ack,
+            "setStyleTexts" => HandleResult::Success(serde_json::json!({ "styles": [] })),
+            "addRule" => HandleResult::Success(serde_json::json!({
+                "rule": { "selectorList": { "selectors": [], "text": "" } },
+            })),
+            "removeRule" => HandleResult::Ack,
+            "forcePseudoState" => HandleResult::Ack,
+            "getMediaQueries" => HandleResult::Success(serde_json::json!({ "medias": [] })),
+            "setEffectivePropertyValueForNode" => HandleResult::Ack,
+            "getPlatformFontsForNode" => HandleResult::Success(serde_json::json!({ "fonts": [] })),
+            "setKeyframeKey" => HandleResult::Ack,
+            "setLocalFontsEnabled" => HandleResult::Ack,
+            "getBackgroundColors" => HandleResult::Success(serde_json::json!({ "backgroundColors": [] })),
+            "setContainerQueryVariableModified" => HandleResult::Ack,
+            "setFontFamilies" => HandleResult::Ack,
+            "setFontVariations" => HandleResult::Ack,
+            "setRuleSelector" => HandleResult::Ack,
+            "startRuleUsageTracking" => HandleResult::Success(serde_json::json!({})),
+            "stopRuleUsageTracking" => HandleResult::Success(serde_json::json!({ "ruleUsage": [] })),
+            "takeCoverageDelta" => HandleResult::Success(serde_json::json!({ "coverage": [] })),
+            "takeComputedStyleUpdates" => HandleResult::Success(serde_json::json!({ "computedStyles": [] })),
+            "locateNode" => HandleResult::Ack,
+            "getLayersForNode" => HandleResult::Success(serde_json::json!({ "layers": [] })),
+            "stopLayerPainting" => HandleResult::Ack,
+            "startLayerPainting" => HandleResult::Ack,
+            "buildIndexedStyleSheetSummary" => HandleResult::Success(serde_json::json!({})),
+            "getStyleSheetRefCount" => HandleResult::Success(serde_json::json!({ "refCount": 0 })),
             _ => method_not_found("CSS", method),
         }
     }
+}
+
+fn extract_inline_style(html: &str, selector: &str) -> Option<Vec<(String, String)>> {
+    let doc = scraper::Html::parse_document(html);
+    let sel = scraper::Selector::parse(selector).ok()?;
+    let el = doc.select(&sel).next()?;
+
+    let style_str = el.value().attr("style")?;
+    if style_str.is_empty() {
+        return None;
+    }
+
+    let mut properties = Vec::new();
+    for decl in style_str.split(';') {
+        let decl = decl.trim();
+        if let Some(colon_pos) = decl.find(':') {
+            let prop = decl[..colon_pos].trim().to_string();
+            let val = decl[colon_pos + 1..].trim().to_string();
+            if !prop.is_empty() && !val.is_empty() {
+                properties.push((prop, val));
+            }
+        }
+    }
+
+    if properties.is_empty() { None } else { Some(properties) }
 }

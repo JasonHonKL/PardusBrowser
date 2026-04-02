@@ -511,6 +511,53 @@ fn execute_scripts_with_timeout(
     guard.dom_html.clone()
 }
 
+// ==================== CDP Evaluate Result Types ====================
+
+/// Result of evaluating a JavaScript expression.
+/// Used by CDP Runtime domain for script evaluation.
+#[derive(Debug)]
+pub struct EvaluateResult {
+    /// The type of the result (e.g., "string", "number", "boolean", "undefined", "object")
+    pub r#type: String,
+    /// The value as a JSON-serializable string
+    pub value: String,
+    /// Optional description
+    pub description: Option<String>,
+    /// Optional subtype (e.g., "null", "regexp", "promise")
+    pub subtype: Option<String>,
+    /// Exception details if an error occurred
+    pub exception_details: Option<serde_json::Value>,
+}
+
+/// Evaluate a JavaScript expression in the context of an HTML page.
+///
+/// This is used by CDP Runtime domain to support Runtime.evaluate and Runtime.callFunctionOn.
+pub fn evaluate_js_expression(
+    _html: &str,
+    _url: &str,
+    _expression: &str,
+    _await_promise: bool,
+    _timeout_ms: u64,
+) -> EvaluateResult {
+    // Stub implementation - full JS evaluation requires proper V8 integration
+    // which is done via execute_js() above for page-level script execution.
+    // For expression evaluation (e.g., document.title), we would need:
+    // 1. Parse the HTML
+    // 2. Create a V8 context with DOM shims
+    // 3. Execute the expression
+    // 4. Serialize the result
+    
+    // For now, return a stub that indicates the expression was received
+    // This allows CDP clients to connect without crashing
+    EvaluateResult {
+        r#type: "undefined".to_string(),
+        value: "null".to_string(),
+        description: Some("JS evaluation stub - full implementation requires V8 context".to_string()),
+        subtype: None,
+        exception_details: None,
+    }
+}
+
 // ==================== Main Entry Point ====================
 
 /// Execute all scripts in the given HTML and return the modified HTML.

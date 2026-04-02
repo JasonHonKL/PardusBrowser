@@ -2,6 +2,7 @@ pub mod app;
 pub mod browser;
 pub mod cache;
 pub mod config;
+pub mod csp;
 pub mod http;
 pub mod interact;
 pub mod intercept;
@@ -19,24 +20,36 @@ pub mod semantic;
 pub mod session;
 pub mod sse;
 pub mod tab;
+pub mod tls;
 pub mod url_policy;
 #[cfg(feature = "js")]
 pub mod websocket;
 
 pub use app::App;
 pub use browser::Browser;
-pub use config::BrowserConfig;
+pub use config::{BrowserConfig, ProxyConfig, CspConfig};
 pub use page::Page;
 pub use sandbox::{JsSandboxMode, SandboxPolicy};
 pub use page::PageSnapshot;
 pub use url_policy::UrlPolicy;
+pub use tls::{CertificatePinningConfig, CertPin, PinAlgorithm, PinMatchPolicy};
+pub use csp::{CspPolicy, CspPolicySet, CspDirectiveKind, CspCheckResult};
 #[cfg(feature = "js")]
 pub use js::runtime::execute_js;
+#[cfg(feature = "js")]
+pub use js::runtime::{evaluate_js_expression, EvaluateResult};
 pub use semantic::tree::{SemanticNode, SemanticRole, SemanticTree, TreeStats};
 pub use navigation::graph::NavigationGraph;
 pub use output::tree_formatter::format_tree;
 pub use output::json_formatter::format_json;
+pub use output::llm_formatter::format_llm;
 pub use interact::{ElementHandle, FormState, InteractionResult, ScrollDirection};
+#[cfg(feature = "js")]
+pub use interact::action_plan::{ActionPlan, ActionType, PageType, SuggestedAction};
+#[cfg(feature = "js")]
+pub use interact::auto_fill::{AutoFillValues, AutoFillResult, ValidationStatus};
+#[cfg(feature = "js")]
+pub use interact::recording::{SessionRecording, SessionRecorder, RecordedAction, RecordedActionType, ReplayStepResult, replay};
 pub use tab::tab::TabConfig;
 pub use tab::{Tab, TabId, TabManager};
 pub use push::{PushCache, PushEntry, push_cache::PushSource, PushCacheStats, EarlyScanner};

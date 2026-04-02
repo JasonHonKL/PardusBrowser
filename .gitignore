@@ -2,3 +2,13 @@
 **/*.rs.bk
 Cargo.lock
 .DS_Store
+
+# Adapter build artifacts
+adapters/python/pardus-playwright/*.egg-info/
+adapters/python/pardus-playwright/__pycache__/
+adapters/python/pardus-playwright/build/
+adapters/python/pardus-playwright/dist/
+adapters/node/pardus-puppeteer/node_modules/
+adapters/node/pardus-puppeteer/dist/
+adapters/node/pardus-playwright/node_modules/
+adapters/node/pardus-playwright/dist/

@@ -1,7 +1,96 @@
 use std::path::PathBuf;
 
+use crate::csp::CspPolicySet;
 use crate::sandbox::SandboxPolicy;
+use crate::tls::CertificatePinningConfig;
 use crate::url_policy::UrlPolicy;
+
+/// Proxy configuration for HTTP/HTTPS/SOCKS5 traffic.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ProxyConfig {
+    /// HTTP proxy URL (e.g., "http://proxy.example.com:8080")
+    pub http_proxy: Option<String>,
+    /// HTTPS proxy URL (e.g., "http://proxy.example.com:8080")
+    pub https_proxy: Option<String>,
+    /// All traffic proxy (e.g., "socks5://127.0.0.1:1080" or "http://proxy.example.com:8080")
+    pub all_proxy: Option<String>,
+    /// Comma-separated list of hosts to bypass proxy
+    pub no_proxy: Option<String>,
+}
+
+impl ProxyConfig {
+    /// Create a new empty proxy config
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set HTTP proxy URL
+    pub fn with_http_proxy(mut self, url: impl Into<String>) -> Self {
+        self.http_proxy = Some(url.into());
+        self
+    }
+
+    /// Set HTTPS proxy URL
+    pub fn with_https_proxy(mut self, url: impl Into<String>) -> Self {
+        self.https_proxy = Some(url.into());
+        self
+    }
+
+    /// Set all traffic proxy URL
+    pub fn with_all_proxy(mut self, url: impl Into<String>) -> Self {
+        self.all_proxy = Some(url.into());
+        self
+    }
+
+    /// Set no_proxy list (comma-separated)
+    pub fn with_no_proxy(mut self, hosts: impl Into<String>) -> Self {
+        self.no_proxy = Some(hosts.into());
+        self
+    }
+
+    /// Check if any proxy is configured
+    pub fn is_configured(&self) -> bool {
+        self.http_proxy.is_some() || self.https_proxy.is_some() || self.all_proxy.is_some()
+    }
+
+    /// Load proxy configuration from environment variables
+    /// Respects: HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy,
+    ///           ALL_PROXY, all_proxy, NO_PROXY, no_proxy
+    pub fn from_env() -> Self {
+        Self {
+            http_proxy: std::env::var("HTTP_PROXY")
+                .or_else(|_| std::env::var("http_proxy"))
+                .ok(),
+            https_proxy: std::env::var("HTTPS_PROXY")
+                .or_else(|_| std::env::var("https_proxy"))
+                .ok(),
+            all_proxy: std::env::var("ALL_PROXY")
+                .or_else(|_| std::env::var("all_proxy"))
+                .ok(),
+            no_proxy: std::env::var("NO_PROXY")
+                .or_else(|_| std::env::var("no_proxy"))
+                .ok(),
+        }
+    }
+
+    /// Merge environment variables with explicit config (explicit takes precedence)
+    pub fn merge_env(mut self) -> Self {
+        let env = Self::from_env();
+        if self.http_proxy.is_none() && env.http_proxy.is_some() {
+            self.http_proxy = env.http_proxy;
+        }
+        if self.https_proxy.is_none() && env.https_proxy.is_some() {
+            self.https_proxy = env.https_proxy;
+        }
+        if self.all_proxy.is_none() && env.all_proxy.is_some() {
+            self.all_proxy = env.all_proxy;
+        }
+        if self.no_proxy.is_none() && env.no_proxy.is_some() {
+            self.no_proxy = env.no_proxy;
+        }
+        self
+    }
+}
 
 /// Connection pool configuration for HTTP client.
 #[derive(Debug, Clone)]
@@ -70,6 +159,71 @@ impl Default for PushConfig {
     }
 }
 
+/// CSP enforcement configuration.
+#[derive(Debug, Clone)]
+pub struct CspConfig {
+    /// Enable CSP enforcement from server headers.
+    /// When `false` (default), CSP headers are ignored entirely.
+    pub enforce_csp: bool,
+    /// Log report-only violations even when enforce mode is active.
+    pub log_report_only: bool,
+    /// Override: ignore server CSP headers and use this raw policy string instead.
+    /// Useful for AI agents that want to enforce their own CSP.
+    pub override_policy: Option<String>,
+}
+
+impl Default for CspConfig {
+    fn default() -> Self {
+        Self {
+            enforce_csp: false,
+            log_report_only: true,
+            override_policy: None,
+        }
+    }
+}
+
+impl CspConfig {
+    /// Create a CSP config that enforces server headers.
+    pub fn enforcing() -> Self {
+        Self {
+            enforce_csp: true,
+            log_report_only: true,
+            override_policy: None,
+        }
+    }
+
+    /// Create a CSP config with a custom policy string.
+    pub fn with_policy(policy: impl Into<String>) -> Self {
+        Self {
+            enforce_csp: true,
+            log_report_only: true,
+            override_policy: Some(policy.into()),
+        }
+    }
+
+    /// Parse the effective policy from headers, respecting override.
+    pub fn parse_policy(&self, headers: &[(String, String)]) -> Option<CspPolicySet> {
+        if !self.enforce_csp {
+            return None;
+        }
+        if let Some(ref policy_str) = self.override_policy {
+            let set = CspPolicySet::from_raw(policy_str);
+            if set.is_empty() {
+                None
+            } else {
+                Some(set)
+            }
+        } else {
+            let set = CspPolicySet::from_headers(headers);
+            if set.is_empty() {
+                None
+            } else {
+                Some(set)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BrowserConfig {
     pub cache_dir: PathBuf,
@@ -87,6 +241,15 @@ pub struct BrowserConfig {
     /// Sandbox policy for restricting untrusted content execution.
     /// Defaults to `SandboxPolicy::off()` (no restrictions).
     pub sandbox: SandboxPolicy,
+    /// Certificate pinning configuration.
+    /// When set with pins, validates server certificates against known SPKI hashes or CA certs.
+    pub cert_pinning: Option<CertificatePinningConfig>,
+    /// Proxy configuration for HTTP/HTTPS/SOCKS5 traffic.
+    /// Supports environment variable loading (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, NO_PROXY).
+    pub proxy: ProxyConfig,
+    /// CSP enforcement configuration.
+    /// Defaults to disabled — no CSP enforcement unless explicitly enabled.
+    pub csp: CspConfig,
 }
 
 impl BrowserConfig {
@@ -110,6 +273,9 @@ impl Default for BrowserConfig {
             push: PushConfig::default(),
             url_policy: UrlPolicy::default(),
             sandbox: SandboxPolicy::default(),
+            cert_pinning: None,
+            proxy: ProxyConfig::default(),
+            csp: CspConfig::default(),
         }
     }
 }

@@ -8,7 +8,7 @@ name = "pardus-browser"
 path = "src/main.rs"
 
 [dependencies]
-pardus-core = { path = "../pardus-core" }
+pardus-core = { path = "../pardus-core", default-features = false }
 pardus-cdp = { path = "../pardus-cdp", default-features = false }
 pardus-debug = { path = "../pardus-debug" }
 pardus-kg = { path = "../pardus-kg" }
@@ -21,3 +21,7 @@ anyhow = { workspace = true }
 dirs = "6"
 rustyline = "15"
 shell-words = "1"
+
+[features]
+default = []
+js = ["pardus-core/js"]

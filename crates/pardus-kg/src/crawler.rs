@@ -27,9 +27,16 @@ struct FrontierEntry {
 
 /// Crawl a site and build its Knowledge Graph.
 pub async fn crawl(root_url: &str, config: &CrawlConfig) -> Result<KnowledgeGraph> {
+    crawl_with_config(root_url, config).await
+}
+
+/// Crawl a site with explicit configuration.
+pub async fn crawl_with_config(root_url: &str, config: &CrawlConfig) -> Result<KnowledgeGraph> {
     let start = Instant::now();
 
-    let app = Arc::new(App::new(BrowserConfig::default()));
+    let mut browser_config = BrowserConfig::default();
+    browser_config.proxy = config.proxy.clone();
+    let app = Arc::new(App::new(browser_config));
     let mut graph = KnowledgeGraph::new(root_url, config.clone());
 
     let root_origin = Url::parse(root_url)

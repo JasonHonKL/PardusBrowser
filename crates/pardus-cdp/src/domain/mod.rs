@@ -25,11 +25,38 @@ pub struct DomainContext {
     /// The App instance (HTTP client, config, network log).
     pub app: Arc<pardus_core::App>,
     /// Target store: target_id -> TargetEntry.
+    /// Stores raw HTML rather than parsed Page to avoid !Send types from scraper.
     pub targets: Arc<Mutex<HashMap<String, TargetEntry>>>,
     /// Event bus sender for pushing events to clients.
     pub event_bus: Arc<EventBus>,
     /// Node map for this session (backendNodeId <-> selector).
     pub node_map: Arc<Mutex<NodeMap>>,
+}
+
+impl DomainContext {
+    /// Create a new DomainContext with the given App.
+    pub fn new(
+        app: Arc<pardus_core::App>,
+        targets: Arc<Mutex<HashMap<String, TargetEntry>>>,
+        event_bus: Arc<EventBus>,
+        node_map: Arc<Mutex<NodeMap>>,
+    ) -> Self {
+        Self {
+            app,
+            targets,
+            event_bus,
+            node_map,
+        }
+    }
+
+    /// Create a temporary Browser from the App configuration.
+    /// 
+    /// This allows using the unified Browser API while keeping DomainContext Send+Sync.
+    /// The Browser is created on-demand and not stored in DomainContext.
+    pub fn create_browser(&self) -> pardus_core::Browser {
+        let config = self.app.config_snapshot();
+        pardus_core::Browser::new(config)
+    }
 }
 
 impl DomainContext {
@@ -53,6 +80,11 @@ impl DomainContext {
         targets.get(target_id).cloned()
     }
 
+    /// Navigate to a URL using the App API.
+    /// 
+    /// Note: Uses App directly rather than Browser because Browser contains
+    /// !Send types (scraper::Html in Page) that cannot be held across await
+    /// points in CDP handlers which must be Send.
     pub async fn navigate(&self, target_id: &str, url: &str) -> anyhow::Result<()> {
         let (final_url, html_str, title) = {
             let page = pardus_core::Page::from_url(&self.app, url).await?;
@@ -66,6 +98,18 @@ impl DomainContext {
             js_enabled: false,
         });
         Ok(())
+    }
+    
+    /// Reload a target using the App API.
+    pub async fn reload(&self, target_id: &str) -> anyhow::Result<()> {
+        let url = {
+            let targets = self.targets.lock().await;
+            targets.get(target_id)
+                .map(|t| t.url.clone())
+                .unwrap_or_else(|| "about:blank".to_string())
+        };
+        
+        self.navigate(target_id, &url).await
     }
 
     pub fn update_target_with_data(&self, target_id: &str, url: String, html: String, title: Option<String>) {

@@ -166,7 +166,7 @@ pub fn element_to_handle(el: &ElementRef, html: &Html) -> ElementHandle {
     }
 }
 
-fn compute_action(tag: &str, input_type: Option<&str>) -> Option<String> {
+pub fn compute_action(tag: &str, input_type: Option<&str>) -> Option<String> {
     match tag {
         "a" => Some("navigate".to_string()),
         "button" => Some("click".to_string()),
@@ -187,7 +187,7 @@ fn compute_action(tag: &str, input_type: Option<&str>) -> Option<String> {
     }
 }
 
-fn compute_label(tag: &str, el: &ElementRef) -> Option<String> {
+pub fn compute_label(tag: &str, el: &ElementRef) -> Option<String> {
     if let Some(label) = el.value().attr("aria-label") {
         let trimmed = label.trim().to_string();
         if !trimmed.is_empty() {

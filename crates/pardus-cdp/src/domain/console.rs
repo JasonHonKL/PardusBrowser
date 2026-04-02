@@ -28,6 +28,7 @@ impl CdpDomainHandler for ConsoleDomain {
                 session.disable_domain("Console");
                 HandleResult::Ack
             }
+            "clearMessages" => HandleResult::Ack,
             _ => method_not_found("Console", method),
         }
     }

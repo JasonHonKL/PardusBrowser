@@ -1,12 +1,14 @@
 use anyhow::Result;
-use pardus_core::{Browser, BrowserConfig, FormState, ScrollDirection};
+use pardus_core::{Browser, BrowserConfig, FormState, ProxyConfig, ScrollDirection};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
 use crate::OutputFormatArg;
 
-pub async fn run(js: bool, format: OutputFormatArg, wait_ms: u32) -> Result<()> {
-    let mut browser = Browser::new(BrowserConfig::default());
+pub async fn run_with_config(js: bool, format: OutputFormatArg, wait_ms: u32, proxy_config: ProxyConfig) -> Result<()> {
+    let mut browser_config = BrowserConfig::default();
+    browser_config.proxy = proxy_config;
+    let mut browser = Browser::new(browser_config);
     let mut format = format;
     let mut js_enabled = js;
     let mut wait_ms = wait_ms;
@@ -259,6 +261,10 @@ fn print_tree(browser: &Browser, format: &OutputFormatArg) {
             .unwrap_or_default();
             println!("{}", json);
         }
+        OutputFormatArg::Llm => {
+            let output = pardus_core::output::llm_formatter::format_llm(&tree);
+            println!("{}", output);
+        }
     }
     println!(
         "  {} landmarks, {} links, {} headings, {} actions",
@@ -297,6 +303,10 @@ fn print_interaction_result(
                     )
                     .unwrap_or_default();
                     println!("{}", json);
+                }
+                OutputFormatArg::Llm => {
+                    let output = pardus_core::output::llm_formatter::format_llm(&tree);
+                    println!("{}", output);
                 }
             }
         }
@@ -345,6 +355,10 @@ fn print_interaction_result(
                     )
                     .unwrap_or_default();
                     println!("{}", json);
+                }
+                OutputFormatArg::Llm => {
+                    let output = pardus_core::output::llm_formatter::format_llm(&tree);
+                    println!("{}", output);
                 }
             }
         }

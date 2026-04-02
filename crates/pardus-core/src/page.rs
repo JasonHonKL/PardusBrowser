@@ -32,10 +32,12 @@ pub struct Page {
     pub content_type: Option<String>,
     pub html: Html,
     pub base_url: String,
+    /// CSP policy parsed from response headers (when CSP enforcement is enabled).
+    pub csp: Option<crate::csp::CspPolicySet>,
 }
 
 impl Page {
-    async fn fetch_html(app: &Arc<App>, url: &str) -> anyhow::Result<(String, u16, String, Option<String>)> {
+    async fn fetch_html(app: &Arc<App>, url: &str) -> anyhow::Result<(String, u16, String, Option<String>, Option<crate::csp::CspPolicySet>)> {
         app.validate_url(url)?;
 
         let start = Instant::now();
@@ -59,11 +61,12 @@ impl Page {
         let body_size = body.len();
 
         // Sandbox: check max page size
-        if app.config.sandbox.max_page_size > 0 && body_size > app.config.sandbox.max_page_size {
+        let config = app.config.read();
+        if config.sandbox.max_page_size > 0 && body_size > config.sandbox.max_page_size {
             anyhow::bail!(
                 "Page size ({} bytes) exceeds sandbox limit ({} bytes)",
                 body_size,
-                app.config.sandbox.max_page_size
+                config.sandbox.max_page_size
             );
         }
 
@@ -74,18 +77,23 @@ impl Page {
         validate_content_type_pub(content_type.as_deref(), &final_url)?;
 
         // Sandbox: disable push if sandbox says so
-        let push_enabled = app.config.push.enable_push && !app.config.sandbox.disable_push;
+        let push_enabled = config.push.enable_push && !config.sandbox.disable_push;
+
+        // CSP: parse policy from response headers if enforcement is enabled
+        let csp_policy = config.csp.parse_policy(&resp_headers);
+        drop(config);
+
         spawn_push_fetches(&app.http_client, &body, &final_url, push_enabled);
 
-        Ok((body, status, final_url, content_type))
+        Ok((body, status, final_url, content_type, csp_policy))
     }
 
     #[must_use = "ignoring Result may silently swallow navigation errors"]
     pub async fn from_url(app: &Arc<App>, url: &str) -> anyhow::Result<Self> {
-        let (body, status, final_url, content_type) = Self::fetch_html(app, url).await?;
+        let (body, status, final_url, content_type, csp) = Self::fetch_html(app, url).await?;
 
         let html = Html::parse_document(&body);
-        let base_url = Self::extract_base_url(&html, &final_url);
+        let base_url = Self::extract_base_url(&html, &final_url, csp.as_ref());
 
         Ok(Self {
             url: final_url,
@@ -93,19 +101,20 @@ impl Page {
             content_type,
             html,
             base_url,
+            csp,
         })
     }
 
     #[must_use = "ignoring Result may silently swallow navigation errors"]
     #[cfg(feature = "js")]
     pub async fn from_url_with_js(app: &Arc<App>, url: &str, wait_ms: u32) -> anyhow::Result<Self> {
-        let (body, status, final_url, content_type) = Self::fetch_html(app, url).await?;
+        let (body, status, final_url, content_type, csp) = Self::fetch_html(app, url).await?;
 
-        let base_url = Self::extract_base_url(&Html::parse_document(&body), &final_url);
-        let final_body = crate::js::execute_js(&body, &base_url, wait_ms, Some(&app.config.sandbox)).await?;
+        let base_url = Self::extract_base_url(&Html::parse_document(&body), &final_url, csp.as_ref());
+        let final_body = crate::js::execute_js(&body, &base_url, wait_ms, Some(&app.config.read().sandbox)).await?;
 
         let html = Html::parse_document(&final_body);
-        let base_url = Self::extract_base_url(&html, &final_url);
+        let base_url = Self::extract_base_url(&html, &final_url, csp.as_ref());
 
         Ok(Self {
             url: final_url,
@@ -113,6 +122,7 @@ impl Page {
             content_type,
             html,
             base_url,
+            csp,
         })
     }
 
@@ -124,13 +134,14 @@ impl Page {
 
     pub fn from_html(html_str: &str, url: &str) -> Self {
         let html = Html::parse_document(html_str);
-        let base_url = Self::extract_base_url(&html, url);
+        let base_url = Self::extract_base_url(&html, url, None);
         Self {
             url: url.to_string(),
             status: 200,
             content_type: Some("text/html".to_string()),
             html,
             base_url,
+            csp: None,
         }
     }
 
@@ -203,7 +214,7 @@ impl Page {
 
     /// Extract base URL from HTML (public version for form submission).
     pub(crate) fn extract_base_url_static(html: &Html, fallback: &str) -> String {
-        Self::extract_base_url(html, fallback)
+        Self::extract_base_url(html, fallback, None)
     }
 
     pub fn semantic_tree(&self) -> SemanticTree {
@@ -230,6 +241,7 @@ impl Page {
             content_type: self.content_type.clone(),
             html: Html::parse_document(&self.html.html()),
             base_url: self.base_url.clone(),
+            csp: self.csp.clone(),
         }
     }
 
@@ -314,13 +326,35 @@ impl Page {
             .unwrap_or_else(|_| href.to_string())
     }
 
-    fn extract_base_url(html: &Html, fallback: &str) -> String {
+    fn extract_base_url(html: &Html, fallback: &str, csp: Option<&crate::csp::CspPolicySet>) -> String {
         if let Ok(selector) = Selector::parse("base[href]") {
             if let Some(base_el) = html.select(&selector).next() {
                 if let Some(href) = base_el.value().attr("href") {
                     if let Ok(resolved) = Url::parse(fallback)
                         .and_then(|base| base.join(href))
                     {
+                        // CSP: check base-uri directive
+                        if let Some(csp_policy) = csp {
+                            if let Ok(fallback_url) = Url::parse(fallback) {
+                                let origin = fallback_url.origin();
+                                if let Ok(resolved_url) = Url::parse(&resolved.to_string()) {
+                                    let check = csp_policy.check_base_uri(&origin, &resolved_url);
+                                    if !check.allowed {
+                                        if let Some(ref directive) = check.violated_directive {
+                                            crate::csp::report_violation(&crate::csp::CspViolation {
+                                                document_uri: fallback.to_string(),
+                                                blocked_uri: resolved.to_string(),
+                                                effective_directive: directive.clone(),
+                                                original_policy: String::new(),
+                                                disposition: crate::csp::Disposition::Enforce,
+                                                status_code: 0,
+                                            });
+                                        }
+                                        return fallback.to_string();
+                                    }
+                                }
+                            }
+                        }
                         return resolved.to_string();
                     }
                 }
@@ -519,8 +553,19 @@ fn collect_interactive(node: &SemanticNode) -> Vec<&SemanticNode> {
 }
 
 /// Try to find a scraper ElementRef matching a SemanticNode.
-/// Uses tag, id, name, href, and text to locate the element.
+/// Uses the pre-computed selector stored in the node for reliable lookup.
 fn node_to_handle(node: &SemanticNode, html: &Html) -> Option<ElementHandle> {
+    // Use the pre-computed selector if available
+    if let Some(selector_str) = &node.selector {
+        if let Ok(sel) = Selector::parse(selector_str) {
+            if let Some(el) = html.select(&sel).next() {
+                // Use the pre-computed selector to ensure consistency
+                return Some(build_handle_with_selector(&el, selector_str.clone()));
+            }
+        }
+    }
+
+    // Fallback: try to build selectors from node attributes
     let candidates = build_node_selectors(node);
 
     for candidate in candidates {
@@ -534,6 +579,35 @@ fn node_to_handle(node: &SemanticNode, html: &Html) -> Option<ElementHandle> {
     }
 
     None
+}
+
+/// Build an ElementHandle with a specific pre-computed selector.
+fn build_handle_with_selector(el: &ElementRef, selector: String) -> ElementHandle {
+    use crate::interact::element::{compute_action, compute_label};
+
+    let tag = el.value().name().to_lowercase();
+    let name_attr = el.value().attr("name").map(|s| s.to_string());
+    let href = el.value().attr("href").map(|s| s.to_string());
+    let input_type = el.value().attr("type").map(|s| s.to_string());
+    let value = el.value().attr("value").map(|s| s.to_string());
+    let id = el.value().attr("id").map(|s| s.to_string());
+    let is_disabled = el.value().attr("disabled").is_some();
+
+    let action = compute_action(&tag, input_type.as_deref());
+    let label = compute_label(&tag, el);
+
+    ElementHandle {
+        selector,
+        tag,
+        id,
+        name: name_attr,
+        action,
+        is_disabled,
+        href,
+        label,
+        input_type,
+        value,
+    }
 }
 
 fn build_node_selectors(node: &SemanticNode) -> Vec<String> {

@@ -1,12 +1,13 @@
 use crate::config::BrowserConfig;
 use pardus_debug::NetworkLog;
+use parking_lot::RwLock;
 use std::sync::Arc;
 use std::sync::Mutex;
 use url::Url;
 
 pub struct App {
     pub http_client: reqwest::Client,
-    pub config: BrowserConfig,
+    pub config: RwLock<BrowserConfig>,
     pub network_log: Arc<Mutex<NetworkLog>>,
 }
 
@@ -21,13 +22,34 @@ impl App {
             client_builder = client_builder.cookie_store(true);
         }
 
-        let http_client = client_builder
-            .build()
-            .expect("failed to build HTTP client");
+        // Certificate pinning: use custom TLS connector when pins are configured
+        if let Some(pinning) = &config.cert_pinning {
+            if !pinning.pins.is_empty() || !pinning.default_pins.is_empty() {
+                client_builder = match crate::tls::pinned_client_builder(client_builder, pinning) {
+                    Ok(builder) => builder,
+                    Err(e) => {
+                        tracing::warn!(
+                            "certificate pinning setup failed, using default TLS: {}",
+                            e
+                        );
+                        // Rebuild without pinning since builder was moved
+                        let mut new_builder = reqwest::Client::builder()
+                            .user_agent(&config.user_agent)
+                            .timeout(std::time::Duration::from_millis(config.timeout_ms as u64));
+                        if !config.sandbox.ephemeral_session {
+                            new_builder = new_builder.cookie_store(true);
+                        }
+                        new_builder
+                    }
+                };
+            }
+        }
+
+        let http_client = client_builder.build().expect("failed to build HTTP client");
 
         Self {
             http_client,
-            config,
+            config: RwLock::new(config),
             network_log: Arc::new(Mutex::new(NetworkLog::new())),
         }
     }
@@ -36,6 +58,11 @@ impl App {
     ///
     /// Returns an parsed URL if valid, or an error if the URL violates the policy.
     pub fn validate_url(&self, url: &str) -> anyhow::Result<Url> {
-        self.config.url_policy.validate(url)
+        self.config.read().url_policy.validate(url)
+    }
+
+    /// Get a snapshot of the current configuration.
+    pub fn config_snapshot(&self) -> BrowserConfig {
+        self.config.read().clone()
     }
 }

@@ -16,3 +16,7 @@ pub mod sse;
 pub mod timer;
 
 pub use runtime::execute_js;
+
+// Re-export types that RuntimeDomain needs
+// These are available regardless of whether the "js" feature is enabled
+pub use runtime::{EvaluateResult, evaluate_js_expression};

@@ -54,6 +54,31 @@ impl Browser {
             client_builder = client_builder.cookie_store(true);
         }
 
+        // Apply proxy configuration
+        client_builder = Self::apply_proxy_config(client_builder, &config.proxy);
+
+        // Certificate pinning: use custom TLS connector when pins are configured
+        if let Some(pinning) = &config.cert_pinning {
+            if !pinning.pins.is_empty() || !pinning.default_pins.is_empty() {
+                client_builder = match crate::tls::pinned_client_builder(client_builder, pinning) {
+                    Ok(builder) => builder,
+                    Err(e) => {
+                        tracing::warn!("certificate pinning setup failed, using default TLS: {}", e);
+                        // Rebuild without pinning since builder was moved
+                        let mut new_builder = reqwest::Client::builder()
+                            .user_agent(&config.user_agent)
+                            .timeout(std::time::Duration::from_millis(config.timeout_ms as u64));
+                        if !config.sandbox.ephemeral_session {
+                            new_builder = new_builder.cookie_store(true);
+                        }
+                        // Re-apply proxy config after rebuild
+                        new_builder = Self::apply_proxy_config(new_builder, &config.proxy);
+                        new_builder
+                    }
+                };
+            }
+        }
+
         let http_client = client_builder
             .build()
             .expect("failed to build HTTP client");
@@ -71,6 +96,68 @@ impl Browser {
             tabs: HashMap::new(),
             active_tab: None,
         }
+    }
+
+    /// Apply proxy configuration to the HTTP client builder.
+    fn apply_proxy_config(
+        mut builder: reqwest::ClientBuilder,
+        proxy_config: &crate::config::ProxyConfig,
+    ) -> reqwest::ClientBuilder {
+        if !proxy_config.is_configured() {
+            return builder;
+        }
+
+        // Parse no_proxy list into reqwest::NoProxy if present
+        let no_proxy = proxy_config.no_proxy.as_ref().and_then(|np| {
+            reqwest::NoProxy::from_string(np)
+        });
+
+        // Apply all_proxy first (lowest priority, applied first)
+        if let Some(all_url) = &proxy_config.all_proxy {
+            match reqwest::Proxy::all(all_url) {
+                Ok(mut proxy) => {
+                    if let Some(ref np) = no_proxy {
+                        proxy = proxy.no_proxy(Some(np.clone()));
+                    }
+                    builder = builder.proxy(proxy);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to configure all_proxy '{}': {}", all_url, e);
+                }
+            }
+        }
+
+        // Apply HTTP proxy
+        if let Some(http_url) = &proxy_config.http_proxy {
+            match reqwest::Proxy::http(http_url) {
+                Ok(mut proxy) => {
+                    if let Some(ref np) = no_proxy {
+                        proxy = proxy.no_proxy(Some(np.clone()));
+                    }
+                    builder = builder.proxy(proxy);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to configure http_proxy '{}': {}", http_url, e);
+                }
+            }
+        }
+
+        // Apply HTTPS proxy
+        if let Some(https_url) = &proxy_config.https_proxy {
+            match reqwest::Proxy::https(https_url) {
+                Ok(mut proxy) => {
+                    if let Some(ref np) = no_proxy {
+                        proxy = proxy.no_proxy(Some(np.clone()));
+                    }
+                    builder = builder.proxy(proxy);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to configure https_proxy '{}': {}", https_url, e);
+                }
+            }
+        }
+
+        builder
     }
 
     /// Create a default Browser wrapped in `Arc` for sharing.
@@ -448,6 +535,7 @@ impl Browser {
     }
 
     /// Check if the active tab has JS execution enabled.
+    #[allow(dead_code)]
     fn is_js_enabled(&self) -> bool {
         self.active_tab().map(|t| t.config.js_enabled).unwrap_or(false)
     }
@@ -457,7 +545,7 @@ impl Browser {
     fn temp_app(&self) -> Arc<crate::app::App> {
         Arc::new(crate::app::App {
             http_client: self.http_client.clone(),
-            config: self.config.clone(),
+            config: parking_lot::RwLock::new(self.config.clone()),
             network_log: self.network_log.clone(),
         })
     }

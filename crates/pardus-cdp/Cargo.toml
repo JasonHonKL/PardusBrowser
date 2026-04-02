@@ -4,7 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pardus-core = { path = "../pardus-core", default-features = false }
+pardus-core = { path = "../pardus-core" }
+pardus-debug = { path = "../pardus-debug" }
+scraper = "0.22"
 tokio = { workspace = true }
 tokio-tungstenite = "0.26"
 futures-util = "0.3"
@@ -17,3 +19,4 @@ uuid = { version = "1", features = ["v4"] }
 reqwest = { workspace = true }
 anyhow = { workspace = true }
 url = "2"
+parking_lot = { workspace = true }

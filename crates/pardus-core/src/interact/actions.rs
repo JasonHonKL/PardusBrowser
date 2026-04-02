@@ -207,6 +207,32 @@ async fn click_link(
         .map(|u| u.to_string())
         .unwrap_or_else(|_| href.clone());
 
+    // CSP: check navigate-to directive
+    if let Some(ref csp) = page.csp {
+        if let Ok(resolved_url) = Url::parse(&resolved) {
+            if let Ok(base_url) = Url::parse(&page.base_url) {
+                let origin = base_url.origin();
+                let check = csp.check_navigation(&origin, &resolved_url);
+                if !check.allowed {
+                    if let Some(ref directive) = check.violated_directive {
+                        crate::csp::report_violation(&crate::csp::CspViolation {
+                            document_uri: page.url.clone(),
+                            blocked_uri: resolved.clone(),
+                            effective_directive: directive.clone(),
+                            original_policy: String::new(),
+                            disposition: crate::csp::Disposition::Enforce,
+                            status_code: page.status,
+                        });
+                    }
+                    anyhow::bail!(
+                        "Navigation to '{}' blocked by CSP navigate-to",
+                        resolved
+                    );
+                }
+            }
+        }
+    }
+
     let new_page = Page::from_url(app, &resolved).await?;
     Ok(InteractionResult::Navigated(new_page))
 }

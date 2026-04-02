@@ -1,3 +1,4 @@
+use pardus_core::ProxyConfig;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for a KG crawl.
@@ -17,6 +18,8 @@ pub struct CrawlConfig {
     pub discover_hash_nav: bool,
     /// Whether to discover form submission transitions.
     pub discover_forms: bool,
+    /// Proxy configuration for HTTP traffic.
+    pub proxy: ProxyConfig,
 }
 
 impl Default for CrawlConfig {
@@ -29,6 +32,7 @@ impl Default for CrawlConfig {
             discover_pagination: true,
             discover_hash_nav: true,
             discover_forms: false,
+            proxy: ProxyConfig::default(),
         }
     }
 }

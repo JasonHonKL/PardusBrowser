@@ -2,9 +2,10 @@ use std::path::Path;
 
 use anyhow::Result;
 
+use pardus_core::ProxyConfig;
 use pardus_kg::CrawlConfig;
 
-pub async fn run(
+pub async fn run_with_config(
     url: &str,
     output: &Path,
     depth: usize,
@@ -14,6 +15,7 @@ pub async fn run(
     pagination: bool,
     hash_nav: bool,
     verbose: bool,
+    proxy_config: ProxyConfig,
 ) -> Result<()> {
     if verbose {
         tracing_subscriber::fmt()
@@ -33,6 +35,7 @@ pub async fn run(
         discover_pagination: pagination,
         discover_hash_nav: hash_nav,
         discover_forms: false,
+        proxy: proxy_config,
     };
 
     tracing::info!(url = %url, depth, max_pages, "Starting site mapping");

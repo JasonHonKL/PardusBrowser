@@ -160,12 +160,12 @@ async fn handle_connection(
         Ok(ws_stream) => {
             let targets = Arc::new(Mutex::new(HashMap::<String, crate::domain::TargetEntry>::new()));
             let node_map = Arc::new(Mutex::new(NodeMap::new()));
-            let ctx = Arc::new(DomainContext {
+            let ctx = Arc::new(DomainContext::new(
                 app,
                 targets,
-                event_bus: event_bus.clone(),
+                event_bus.clone(),
                 node_map,
-            });
+            ));
             crate::transport::ws::handle_websocket(
                 ws_stream, router, ctx, event_bus, timeout,
             ).await;
