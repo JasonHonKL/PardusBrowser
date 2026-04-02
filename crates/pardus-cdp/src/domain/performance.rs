@@ -38,7 +38,7 @@ impl CdpDomainHandler for PerformanceDomain {
             }
             "getMetrics" => {
                 let total_time = {
-                    let log = ctx.app.network_log.lock().unwrap();
+                    let log = ctx.app.network_log.lock().unwrap_or_else(|e| e.into_inner());
                     log.total_time_ms()
                 };
                 HandleResult::Success(serde_json::json!({

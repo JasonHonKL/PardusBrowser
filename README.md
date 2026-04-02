@@ -35,7 +35,11 @@ No Chromium binary. No Docker. No GPU. Just HTTP + HTML parsing.
 - **Action annotations** — Every interactive element tagged with `navigate`, `click`, `fill`, `toggle`, or `select`
 - **Network debugger** — DevTools-style request table with subresource discovery and parallel fetching
 - **Session persistence** — Cookies, headers, localStorage across requests
-- **CDP server** — Chrome DevTools Protocol WebSocket endpoint for automation
+- **CDP server** — Chrome DevTools Protocol WebSocket endpoint for automation (14 domains)
+- **Knowledge Graph** — Site-level state map: BFS crawl produces a graph of view-states (semantic + network fingerprints) and verified transitions (link clicks, hash nav, pagination)
+- **JavaScript execution** — Optional V8 via deno_core with DOM ops (enabled by default, see known issues)
+- **Persistent REPL** — Interactive session with persistent state across commands
+- **Tab management** — Multiple tabs with independent history and state
 - **Fast** — HTTP GET + HTML parse, typically under 200ms
 - **Zero dependencies on Chrome** — Pure Rust, no browser binary needed
 
@@ -51,6 +55,13 @@ rustup install nightly
 git clone https://github.com/user/pardus-browser.git
 cd pardus-browser
 cargo +nightly install --path crates/pardus-cli
+```
+
+### Docker
+
+```bash
+docker build -t pardus-browser .
+docker run --rm pardus-browser navigate https://example.com
 ```
 
 ## Usage
@@ -73,7 +84,7 @@ pardus-browser navigate https://example.com --interactive-only
 # Custom headers
 pardus-browser navigate https://api.example.com --header "Authorization: Bearer token"
 
-# Enable JavaScript execution (EXPERIMENTAL - may hang on complex sites)
+# Enable JavaScript execution (improved — problematic scripts are now filtered)
 pardus-browser navigate https://example.com --js
 
 # JS with custom wait time (ms) for async rendering
@@ -206,6 +217,91 @@ pardus-browser serve --host 0.0.0.0 --port 9222
 pardus-browser serve --timeout 60
 ```
 
+Implemented CDP domains: Browser, Target, Page, Runtime, DOM, Network, Emulation, Input, CSS, Log, Console, Security, Performance, Pardus (custom extensions)
+
+### Knowledge Graph (site mapping)
+
+Map a site's functional structure into a deterministic state graph. Nodes are view-states (semantic tree hash + resource fingerprint), edges are verified transitions.
+
+```bash
+# Map a site (default: depth 3, max 50 pages)
+pardus-browser map https://example.com --output kg.json
+
+# Shallow crawl
+pardus-browser map https://example.com --depth 1 --output kg.json
+
+# Deep crawl with higher page limit
+pardus-browser map https://example.com --depth 5 --max-pages 200 --output kg.json
+
+# Skip pagination discovery (only follow links)
+pardus-browser map https://example.com --output kg.json --no-pagination
+
+# Verbose logging
+pardus-browser map https://example.com -v --output kg.json
+```
+
+**Output** — JSON with all view-states, transitions, and stats:
+
+```json
+{
+  "root_url": "https://example.com",
+  "built_at": "2026-04-02T14:30:00Z",
+  "stats": {
+    "total_states": 12,
+    "total_transitions": 23,
+    "verified_transitions": 21,
+    "max_depth_reached": 3,
+    "pages_crawled": 12,
+    "crawl_duration_ms": 5420
+  },
+  "states": {
+    "a1b2c3...": {
+      "url": "https://example.com/",
+      "title": "Example Corp",
+      "fingerprint": {
+        "url_path": "/",
+        "tree_hash": "def456...",
+        "resource_set_hash": "789abc..."
+      },
+      "semantic_tree": { ... },
+      "resource_urls": ["https://example.com/styles.css", ...]
+    }
+  },
+  "transitions": [
+    {
+      "from": "a1b2c3...",
+      "to": "d4e5f6...",
+      "trigger": { "type": "link_click", "url": "/about", "label": "About Us" },
+      "verified": true,
+      "outcome": { "status": 200, "final_url": "https://example.com/about", "matched_prediction": true }
+    },
+    {
+      "from": "a1b2c3...",
+      "to": "a1b2c3...",
+      "trigger": { "type": "hash_navigation", "fragment": "features", "label": "Features" },
+      "verified": true
+    }
+  ]
+}
+```
+
+**How it works:**
+
+1. **BFS crawl** — Starting from the root URL, visits pages breadth-first up to `--depth` and `--max-pages`
+2. **State fingerprinting** — Each page gets a composite ID: blake3 hash of semantic tree structure (roles + interactivity, not text) + resource URLs + URL path
+3. **Deduplication** — Pages with identical fingerprints are merged (same layout, different copy = same state)
+4. **Transition discovery** — For each page, discovers: link clicks, hash navigation (`#section`), pagination (`?page=N`, `/page/N`), and optional form submissions
+5. **Verification** — Each transition is followed and the target state is confirmed
+
+**Transition types:**
+
+| Type | Trigger | Example |
+|------|---------|---------|
+| `link_click` | Click internal link | `<a href="/about">About</a>` |
+| `hash_navigation` | Hash/anchor link | `<a href="#features">Features</a>` |
+| `pagination` | URL-based pagination | `?page=2`, `/page/2`, `?offset=20` |
+| `form_submit` | Form submission | `<form action="/search">` |
+
 ### Clean cache
 
 ```bash
@@ -241,7 +337,70 @@ pardus-browser tab info
 pardus-browser tab navigate https://example.com/page2
 ```
 
-**Note:** Tab state does not persist across CLI invocations. For persistent tab sessions, use the CDP server or the `Browser` type programmatically.
+**Note:** Tab state does not persist across CLI invocations. For persistent tab sessions, use the REPL or the CDP server.
+
+### Interactive REPL
+
+Start a persistent interactive session where browser state (tabs, pages, cookies, history) is preserved across commands:
+
+```bash
+# Start REPL with defaults
+pardus-browser repl
+
+# Enable JS execution by default
+pardus-browser repl --js
+
+# Set default output format and JS wait time
+pardus-browser repl --format json --wait-ms 5000
+```
+
+Once inside the REPL, the prompt shows the current URL context:
+
+```
+pardus> visit https://example.com
+  document  [role: document]
+  └── region  [role: region]
+      ├── heading (h1)  "Example Domain"
+      └── link  "Learn more"  → https://iana.org/domains/example
+  0 landmarks, 1 links, 1 headings, 1 actions
+
+pardus [https://example.com]> tab open https://httpbin.org
+Opened tab 2: httpbin.org
+
+pardus [https://httpbin.org]> tab list
+Tabs (2 total):
+  * [2] Ready — httpbin.org — https://httpbin.org
+    [1] Ready — Example Domain — https://example.com
+
+pardus [https://httpbin.org]> tab switch 1
+Switched to tab 1: https://example.com
+
+pardus [https://example.com]> click 'a'
+Navigated to: https://iana.org/domains/example
+
+pardus [https://iana.org/domains/example]> back
+pardus [https://example.com]> exit
+Bye.
+```
+
+**REPL commands:**
+
+| Command | Description |
+|---------|-------------|
+| `visit <url>` / `open <url>` | Navigate to URL |
+| `click <selector>` | Click an element |
+| `type <selector> <value>` | Type into a field |
+| `submit <selector> [name=value...]` | Submit a form |
+| `scroll [down\|up\|to-top\|to-bottom]` | Scroll the page |
+| `wait <selector> [timeout_ms]` | Wait for element |
+| `back` / `forward` | Navigate history |
+| `reload` | Reload current page |
+| `tab list` / `tab open <url>` / `tab switch <id>` / `tab close [id>` / `tab info` | Tab management |
+| `js [on\|off]` | Toggle JS execution |
+| `format md\|tree\|json` | Change output format |
+| `wait-ms <ms>` | Set JS wait time |
+| `help` | Show available commands |
+| `exit` / `quit` | Exit REPL |
 
 ### Programmatic usage
 
@@ -319,87 +478,69 @@ pardus-browser interact https://example.com wait '.dynamic-content' --js --wait-
 pardus-browser
 ├── crates/pardus-core    Core library — Browser type, HTML parsing, semantic tree, navigation graph, interaction, tabs
 ├── crates/pardus-debug   Network debugger — request recording, subresource discovery, table output
-├── crates/pardus-cdp     CDP WebSocket server — Chrome DevTools Protocol for automation
+├── crates/pardus-cdp     CDP WebSocket server — Chrome DevTools Protocol for automation (14 domains)
+├── crates/pardus-kg      Knowledge Graph — BFS site crawler, state fingerprinting, transition discovery
 └── crates/pardus-cli     CLI binary
 ```
 
-**pardus-core** — The engine. The `Browser` type is the main entry point — it owns the HTTP client, tab state, and provides navigation + interaction as a single cohesive API. Internally, it fetches pages via `reqwest`, parses HTML with `scraper`, and builds semantic trees mapping ARIA roles and interactive states. Provides page interaction (click, type, submit, wait, scroll) with automatic tab updates on navigation. Includes tab management, history navigation, session persistence (cookies, headers, localStorage), and optional JavaScript execution via deno_core. Outputs Markdown, tree, or JSON.
+**pardus-core** — The engine. The `Browser` type is the main entry point — it owns the HTTP client, tab state, and provides navigation + interaction as a single cohesive API. Internally, it fetches pages via `reqwest`, parses HTML with `scraper`, and builds semantic trees mapping ARIA roles and interactive states. Provides page interaction (click, type, submit, wait, scroll) with automatic tab updates on navigation. Includes tab management, history navigation, session persistence (cookies, headers, localStorage), and optional JavaScript execution via deno_core (enabled by default). Outputs Markdown, tree, or JSON.
 
 **pardus-debug** — Network debugging. Records all HTTP requests to a shared `NetworkLog`, discovers subresources from parsed HTML (stylesheets, scripts, images, fonts, media), fetches them in parallel, and formats DevTools-style request tables.
 
-**pardus-cdp** — Chrome DevTools Protocol server. Exposes a WebSocket endpoint for browser automation. Includes domain handlers (DOM, Runtime, Network, Page), event bus, target management, message routing, and session lifecycle.
+**pardus-cdp** — Chrome DevTools Protocol server. Exposes a WebSocket endpoint for browser automation with 14 domain handlers (Browser, Target, Page, Runtime, DOM, Network, Emulation, Input, CSS, Log, Console, Security, Performance, Pardus). Includes event bus, target management, message routing, and session lifecycle.
 
-**pardus-cli** — The `pardus-browser` command-line tool. Provides `navigate`, `interact`, `tab`, `serve`, and `clean` subcommands. All commands use the unified `Browser` type.
+**pardus-kg** — Knowledge Graph. BFS site crawler that builds a deterministic state map: nodes are view-states identified by composite fingerprints (semantic tree structure hash + resource URL set hash + normalized URL), edges are verified transitions (link clicks, hash navigation, pagination). Produces a JSON graph suitable for AI agent consumption — an agent can query the graph to understand what states exist and how to reach them without trial-and-error navigation.
+
+**pardus-cli** — The `pardus-browser` command-line tool. Provides `navigate`, `interact`, `map`, `tab`, `serve`, `repl`, and `clean` subcommands. All commands use the unified `Browser` type.
 
 ## Semantic roles detected
 
 | Element | Role | Action |
 |---------|------|--------|
+| `<html>` / `<body>` | `document` | — |
+| `<header>` | `banner` | — |
+| `<nav>` | `navigation` | — |
+| `<main>` | `main` | — |
+| `<aside>` | `complementary` | — |
+| `<footer>` | `contentinfo` | — |
+| `<section>` / `[role=region]` | `region` | — |
+| `<form>` | `form` | — |
+| `<form role=search>` | `search` | — |
+| `<article>` | `article` | — |
+| `<h1>`–`<h6>` | `heading (hN)` | — |
 | `<a href>` | `link` | `navigate` |
 | `<button>` | `button` | `click` |
-| `<input type=text>` | `textbox` | `fill` |
+| `<input type=text/email/...>` | `textbox` | `fill` |
 | `<input type=submit>` | `button` | `click` |
 | `<input type=checkbox>` | `checkbox` | `toggle` |
+| `<input type=radio>` | `radio` | `toggle` |
 | `<select>` | `combobox` | `select` |
 | `<textarea>` | `textbox` | `fill` |
 | `<img>` | `img` | — |
-| `<h1>`–`<h6>` | `heading (hN)` | — |
-| `<nav>` | `navigation` | — |
-| `<main>` | `main` | — |
-| `<header>` | `banner` | — |
-| `<footer>` | `contentinfo` | — |
-| `<form>` | `form` | — |
-| `<article>` | `article` | — |
-| `<ul>/<ol>` | `list` | — |
+| `<ul>` / `<ol>` | `list` | — |
+| `<li>` | `listitem` | — |
 | `<table>` | `table` | — |
+| `<tr>` | `row` | — |
+| `<td>` | `cell` | — |
+| `<th>` | `columnheader` / `rowheader` | — |
+| `<dialog>` | `dialog` | — |
 | `[role=...]` | custom | varies |
 | `[tabindex]` | varies | varies |
 
 ## Roadmap
 
-### Done
+See [ROADMAP.md](ROADMAP.md) for the full project roadmap, including:
 
-- [x] **Semantic tree output** — ARIA roles, headings, landmarks, interactive elements
-- [x] **Navigation graph** — Internal routes, external links, form descriptors
-- [x] **Multiple output formats** — Markdown, tree, JSON
-- [x] **Interactive-only mode** — Strip static content, show only actionable elements
-- [x] **Action annotations** — navigate, click, fill, toggle, select
-- [x] **Page interaction** — Click links, submit forms, type fields, wait for selectors, scroll
-- [x] **Custom headers** — Pass authentication and custom headers
-- [x] **Cache management** — Clean cookies and cache
-- [x] **Network debugger** — Request table with subresource discovery and parallel fetching
-- [x] **Session persistence** — Cookies, localStorage, auth headers with size limits
-- [x] **CDP WebSocket server** — Domain handlers, event bus, target management, message routing
-- [x] **Unified Browser API** — Single `Browser` type combining navigation, interaction, and tab management
-
-### Experimental
-
-- [~] **JavaScript execution** — V8 via deno_core with custom DOM ops
-  - Infrastructure complete (deno_core, 35+ Rust ops, bootstrap.js)
-  - **Currently disabled** — hangs on JS-heavy sites
-  - Works on simple inline scripts
-  - Needs: smarter script filtering, async callback handling
-
-- [~] **Full DOM API** — querySelector, event dispatching, complete Element API
-  - querySelector / querySelectorAll with CSS selectors (fast-path + scraper fallback)
-  - Element API: cloneNode, insertBefore, replaceChild, contains, etc.
-  - classList, dataset, style proxies
-  - 35+ Rust ops bridging JS <-> Rust DOM
-  - Comment nodes, outerHTML, getElementsByTagName, getElementsByClassName
-  - **Not usable yet** — blocked by JS execution being disabled
-
-### Planned
-
-- [ ] **CDP → Browser migration** — Wire CDP domain handlers through unified `Browser` (blocked by `!Send` constraint)
-- [ ] **JS-level interaction** — Click/type/scroll via deno_core DOM when JS is enabled
-- [ ] **Proxy support** — HTTP/SOCKS proxies
-- [ ] **Screenshots** — Optional, for when pixels actually matter
+- ✅ **Completed features** — Semantic tree, CDP server, JS execution, REPL, tab management, Knowledge Graph
+- 🔧 **In progress** — CDP ↔ Browser API integration, JS-level interactions
+- 📋 **Near-term** — Proxy support, screenshots, KG-driven agent loop
+- 🚀 **Future** — AI agent features, performance, WebSocket/SSE, bindings for Python/Node.js
 
 ## Known Issues
 
 | Issue | Status | Workaround |
 |-------|--------|------------|
-| JS execution hangs on complex sites | Open | Don't use `--js` flag |
+| ~~JS execution hangs on complex sites~~ | **Fixed** | ~~Don't use `--js` flag~~ |
 | External scripts not executed | By design | Only inline scripts supported |
 | setTimeout/setInterval no-ops | By design | Prevents infinite loops |
 

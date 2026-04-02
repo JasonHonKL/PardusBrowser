@@ -15,7 +15,6 @@ impl CdpRouter {
         Self { registry }
     }
 
-    /// Route a CdpRequest to the appropriate domain handler.
     pub async fn route(
         &self,
         request: CdpRequest,
@@ -43,7 +42,13 @@ impl CdpRouter {
                 result,
                 session_id: request.session_id,
             }),
-            HandleResult::Error(err) => Err(err),
+            HandleResult::Error(err) => {
+                let err_with_id = CdpErrorResponse {
+                    id: request.id,
+                    ..err
+                };
+                Err(err_with_id)
+            }
             HandleResult::Ack => Ok(CdpResponse {
                 id: request.id,
                 result: Value::Object(serde_json::Map::new()),

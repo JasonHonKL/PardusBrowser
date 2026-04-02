@@ -73,6 +73,8 @@ pub struct Resource {
     pub size_hint: Option<usize>,
 }
 
+use crate::cache::ResourceCache;
+
 /// Resource manager that coordinates all resource operations
 pub struct ResourceManager {
     scheduler: Arc<ResourceScheduler>,
@@ -80,8 +82,8 @@ pub struct ResourceManager {
 }
 
 impl ResourceManager {
-    pub fn new(config: ResourceConfig) -> Self {
-        let scheduler = Arc::new(ResourceScheduler::new(config.clone()));
+    pub fn new(client: reqwest::Client, config: ResourceConfig, cache: Arc<ResourceCache>) -> Self {
+        let scheduler = Arc::new(ResourceScheduler::new(client, config.clone(), cache));
         Self { scheduler, config }
     }
 

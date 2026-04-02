@@ -27,19 +27,9 @@ impl CdpDomainHandler for InputDomain {
 
         match method {
             "dispatchMouseEvent" => {
-                let mouse_type = params["type"].as_str().unwrap_or("");
-                if mouse_type == "mousePressed" {
-                    // Best-effort: check if interactive elements exist.
-                    // Actual click execution is handled via the Pardus.interact domain,
-                    // since Page is !Send and cannot be held across await points.
-                    let _has_elements = match (ctx.get_html(target_id), ctx.get_url(target_id)) {
-                        (Some(html_str), Some(url)) => {
-                            let page = pardus_core::Page::from_html(&html_str, &url);
-                            !page.interactive_elements().is_empty()
-                        }
-                        _ => false,
-                    };
-                }
+                let _mouse_type = params["type"].as_str().unwrap_or("");
+                let _x = params["x"].as_f64();
+                let _y = params["y"].as_f64();
                 HandleResult::Ack
             }
             "dispatchKeyEvent" => {
@@ -49,9 +39,7 @@ impl CdpDomainHandler for InputDomain {
             "insertText" => {
                 let text = params["text"].as_str().unwrap_or("");
                 if !text.is_empty() {
-                    if let (Some(html_str), Some(url)) = (ctx.get_html(target_id), ctx.get_url(target_id)) {
-                        // Find a text input to type into.
-                        // type_text is synchronous, so Page doesn't cross an await.
+                    if let (Some(html_str), Some(url)) = (ctx.get_html(target_id).await, ctx.get_url(target_id).await) {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         if let Some(el) = page.query("input[type='text'], input:not([type]), textarea") {
                             let _ = pardus_core::App::type_text(&page, &el, text);

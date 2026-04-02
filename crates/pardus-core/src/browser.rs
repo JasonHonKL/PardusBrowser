@@ -13,6 +13,7 @@ use crate::config::BrowserConfig;
 use crate::interact::actions::InteractionResult;
 use crate::interact::{FormState, ScrollDirection};
 use crate::page::Page;
+use crate::push::PushCache;
 use crate::tab::{Tab, TabId, TabState};
 
 /// Unified headless browser for AI agents.
@@ -23,6 +24,7 @@ pub struct Browser {
     pub http_client: reqwest::Client,
     pub config: BrowserConfig,
     pub network_log: Arc<Mutex<NetworkLog>>,
+    pub push_cache: Arc<PushCache>,
     tabs: HashMap<TabId, Tab>,
     active_tab: Option<TabId>,
 }
@@ -50,10 +52,16 @@ impl Browser {
             .build()
             .expect("failed to build HTTP client");
 
+        let push_cache = Arc::new(PushCache::new(
+            config.push.max_push_resources,
+            config.push.push_cache_ttl_secs,
+        ));
+
         Self {
             http_client,
             config,
             network_log: Arc::new(Mutex::new(NetworkLog::new())),
+            push_cache,
             tabs: HashMap::new(),
             active_tab: None,
         }
@@ -75,14 +83,14 @@ impl Browser {
         if self.active_tab.is_none() {
             let id = self.create_tab(url);
             let tab = self.tabs.get_mut(&id).unwrap();
-            tab.load_with_client(&self.http_client, &self.network_log, false, 0).await?;
+            tab.load_with_client(&self.http_client, &self.network_log, &self.config, false, 0).await?;
             self.active_tab = Some(id);
             return Ok(self.tabs.get(&id).unwrap());
         }
 
         let id = self.active_tab.unwrap();
         let tab = self.tabs.get_mut(&id).ok_or_else(|| anyhow::anyhow!("active tab missing"))?;
-        tab.navigate_with_client(&self.http_client, &self.network_log, url, false, 0).await?;
+        tab.navigate_with_client(&self.http_client, &self.network_log, &self.config, url, false, 0).await?;
         Ok(self.tabs.get(&id).unwrap())
     }
 
@@ -91,14 +99,14 @@ impl Browser {
         if self.active_tab.is_none() {
             let id = self.create_tab(url);
             let tab = self.tabs.get_mut(&id).unwrap();
-            tab.load_with_client(&self.http_client, &self.network_log, true, wait_ms).await?;
+            tab.load_with_client(&self.http_client, &self.network_log, &self.config, true, wait_ms).await?;
             self.active_tab = Some(id);
             return Ok(self.tabs.get(&id).unwrap());
         }
 
         let id = self.active_tab.unwrap();
         let tab = self.tabs.get_mut(&id).ok_or_else(|| anyhow::anyhow!("active tab missing"))?;
-        tab.navigate_with_client(&self.http_client, &self.network_log, url, true, wait_ms).await?;
+        tab.navigate_with_client(&self.http_client, &self.network_log, &self.config, url, true, wait_ms).await?;
         Ok(self.tabs.get(&id).unwrap())
     }
 
@@ -106,7 +114,7 @@ impl Browser {
     pub async fn reload(&mut self) -> anyhow::Result<&Tab> {
         let id = self.require_active_id()?;
         let tab = self.tabs.get_mut(&id).unwrap();
-        tab.reload_with_client(&self.http_client, &self.network_log).await?;
+        tab.reload_with_client(&self.http_client, &self.network_log, &self.config).await?;
         Ok(self.tabs.get(&id).unwrap())
     }
 
@@ -114,25 +122,36 @@ impl Browser {
     // Interactions — all operate on the active tab's page
     // -----------------------------------------------------------------------
 
-    /// Click an element. If the click produces navigation, the tab is updated.
+    /// Click an element. If JS is enabled, dispatches click event in V8 DOM first.
+    /// If the click produces navigation, the tab is updated.
     pub async fn click(&mut self, selector: &str) -> anyhow::Result<InteractionResult> {
-        let page = self.require_active_page()?;
+        if self.is_js_enabled() {
+            let page = self.require_active_page()?;
+            let app = self.temp_app();
+            let result = crate::interact::js_interact::js_click(&app, page, selector).await?;
+            drop(app);
+            return self.apply_navigated_result(result);
+        }
 
+        let page = self.require_active_page()?;
         let handle = page.query(selector).ok_or_else(|| {
             anyhow::anyhow!("Element not found: {}", selector)
         })?;
-
-        // We need an App-compatible reference for interact functions.
-        // Build a temporary App view to call existing interact logic.
         let app = self.temp_app();
         let result = crate::interact::actions::click(&app, page, &handle).await?;
-        drop(app); // release borrow
-
+        drop(app);
         self.apply_navigated_result(result)
     }
 
     /// Type text into a form field.
-    pub fn type_text(&mut self, selector: &str, value: &str) -> anyhow::Result<InteractionResult> {
+    /// If JS is enabled, dispatches input/change events in V8 DOM.
+    pub async fn type_text(&mut self, selector: &str, value: &str) -> anyhow::Result<InteractionResult> {
+        if self.is_js_enabled() {
+            let page = self.require_active_page()?;
+            let result = crate::interact::js_interact::js_type(page, selector, value).await?;
+            return self.apply_navigated_result(result);
+        }
+
         let page = self.require_active_page()?;
         let handle = page.query(selector).ok_or_else(|| {
             anyhow::anyhow!("Element not found: {}", selector)
@@ -141,11 +160,20 @@ impl Browser {
     }
 
     /// Submit a form with the given field values.
+    /// If JS is enabled, dispatches submit event first and respects preventDefault.
     pub async fn submit(
         &mut self,
         form_selector: &str,
         state: &FormState,
     ) -> anyhow::Result<InteractionResult> {
+        if self.is_js_enabled() {
+            let page = self.require_active_page()?;
+            let app = self.temp_app();
+            let result = crate::interact::js_interact::js_submit(&app, page, form_selector, state).await?;
+            drop(app);
+            return self.apply_navigated_result(result);
+        }
+
         let page = self.require_active_page()?;
         let app = self.temp_app();
         let result = crate::interact::form::submit_form(&app, page, form_selector, state).await?;
@@ -165,12 +193,18 @@ impl Browser {
             &app, page, selector, timeout_ms, 500,
         ).await?;
         drop(app);
-        // Wait does not navigate, so just return
         Ok(result)
     }
 
-    /// Scroll (URL-based pagination detection).
+    /// Scroll. If JS is enabled, dispatches scroll/wheel events in V8 DOM.
+    /// Otherwise uses URL-based pagination detection.
     pub async fn scroll(&mut self, direction: ScrollDirection) -> anyhow::Result<InteractionResult> {
+        if self.is_js_enabled() {
+            let page = self.require_active_page()?;
+            let result = crate::interact::js_interact::js_scroll(page, direction).await?;
+            return self.apply_navigated_result(result);
+        }
+
         let page = self.require_active_page()?;
         let app = self.temp_app();
         let result = crate::interact::scroll::scroll(&app, page, direction).await?;
@@ -237,7 +271,7 @@ impl Browser {
 
         let needs_load = tab.page.is_none() && matches!(tab.state, TabState::Loading);
         if needs_load {
-            tab.load_with_client(&self.http_client, &self.network_log, tab.config.js_enabled, tab.config.wait_ms).await?;
+            tab.load_with_client(&self.http_client, &self.network_log, &self.config, tab.config.js_enabled, tab.config.wait_ms).await?;
         }
 
         Ok(self.tabs.get(&id).unwrap())
@@ -295,7 +329,7 @@ impl Browser {
             tab.history_index -= 1;
             tab.url = tab.history[tab.history_index].clone();
             tab.page = None;
-            tab.load_with_client(&self.http_client, &self.network_log, tab.config.js_enabled, tab.config.wait_ms).await?;
+            tab.load_with_client(&self.http_client, &self.network_log, &self.config, tab.config.js_enabled, tab.config.wait_ms).await?;
             Ok(Some(self.tabs.get(&id).unwrap()))
         } else {
             Ok(None)
@@ -310,7 +344,7 @@ impl Browser {
             tab.history_index += 1;
             tab.url = tab.history[tab.history_index].clone();
             tab.page = None;
-            tab.load_with_client(&self.http_client, &self.network_log, tab.config.js_enabled, tab.config.wait_ms).await?;
+            tab.load_with_client(&self.http_client, &self.network_log, &self.config, tab.config.js_enabled, tab.config.wait_ms).await?;
             Ok(Some(self.tabs.get(&id).unwrap()))
         } else {
             Ok(None)
@@ -351,6 +385,11 @@ impl Browser {
 
     fn require_active_page(&self) -> anyhow::Result<&Page> {
         self.current_page().ok_or_else(|| anyhow::anyhow!("No page loaded in active tab"))
+    }
+
+    /// Check if the active tab has JS execution enabled.
+    fn is_js_enabled(&self) -> bool {
+        self.active_tab().map(|t| t.config.js_enabled).unwrap_or(false)
     }
 
     /// Create a temporary `Arc<App>` that borrows from Browser's fields.

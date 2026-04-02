@@ -39,7 +39,7 @@ impl CdpDomainHandler for DomDomain {
             }
             "getDocument" => {
                 let mut nm = ctx.node_map.lock().await;
-                let doc = match (ctx.get_html(target_id), ctx.get_url(target_id)) {
+                let doc = match (ctx.get_html(target_id).await, ctx.get_url(target_id).await) {
                     (Some(html_str), Some(url)) => {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         build_document_tree(&page, &mut nm)
@@ -58,7 +58,7 @@ impl CdpDomainHandler for DomDomain {
                 };
 
                 if let Some(selector) = selector {
-                    if let (Some(html_str), Some(url)) = (ctx.get_html(target_id), ctx.get_url(target_id)) {
+                    if let (Some(html_str), Some(url)) = (ctx.get_html(target_id).await, ctx.get_url(target_id).await) {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         if let Some(el) = page.query(&selector) {
                             return HandleResult::Success(serde_json::json!({
@@ -97,7 +97,7 @@ impl CdpDomainHandler for DomDomain {
                 }
 
                 let mut nm = ctx.node_map.lock().await;
-                let has_sel = match (ctx.get_html(target_id), ctx.get_url(target_id)) {
+                let has_sel = match (ctx.get_html(target_id).await, ctx.get_url(target_id).await) {
                     (Some(html_str), Some(url)) => {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         page.has_selector(selector)
@@ -119,11 +119,12 @@ impl CdpDomainHandler for DomDomain {
                 let selector = params["selector"].as_str().unwrap_or("");
                 let mut nm = ctx.node_map.lock().await;
 
-                let node_ids: Vec<i64> = match (ctx.get_html(target_id), ctx.get_url(target_id)) {
+                let node_ids: Vec<i64> = match (ctx.get_html(target_id).await, ctx.get_url(target_id).await) {
                     (Some(html_str), Some(url)) => {
                         let page = pardus_core::Page::from_html(&html_str, &url);
-                        page.query_all(selector).iter().map(|_| {
-                            nm.get_or_assign(selector)
+                        page.query_all(selector).iter().enumerate().map(|(i, _)| {
+                            let unique_key = format!("{}[{}]", selector, i);
+                            nm.get_or_assign(&unique_key)
                         }).collect()
                     }
                     _ => vec![],
@@ -141,7 +142,7 @@ impl CdpDomainHandler for DomDomain {
                     nm.get_selector(node_id).map(|s| s.to_string())
                 };
 
-                let html = match (selector, ctx.get_html(target_id), ctx.get_url(target_id)) {
+                let html = match (selector, ctx.get_html(target_id).await, ctx.get_url(target_id).await) {
                     (Some(sel), Some(html_str), Some(url)) => {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         let elements = page.query_all(&sel);
@@ -151,8 +152,27 @@ impl CdpDomainHandler for DomDomain {
                             String::new()
                         }
                     }
-                    (_, Some(html_str), _) => html_str,
-                    _ => String::new(),
+                    (Some(_), Some(_), None) => String::new(),
+                    (Some(_), None, _) | (None, None, _) => {
+                        return HandleResult::Error(CdpErrorResponse {
+                            id: 0,
+                            error: crate::error::CdpErrorBody {
+                                code: SERVER_ERROR,
+                                message: format!("Node not found: {}", node_id),
+                            },
+                            session_id: None,
+                        });
+                    }
+                    (None, Some(_), _) => {
+                        return HandleResult::Error(CdpErrorResponse {
+                            id: 0,
+                            error: crate::error::CdpErrorBody {
+                                code: INVALID_PARAMS,
+                                message: "No node specified".to_string(),
+                            },
+                            session_id: None,
+                        });
+                    }
                 };
                 HandleResult::Success(serde_json::json!({
                     "outerHTML": html
@@ -206,7 +226,6 @@ fn build_document_tree(page: &pardus_core::Page, node_map: &mut NodeMap) -> Valu
         })
     }).collect();
 
-    let html_id = node_map.get_or_assign("html");
     let title_id = node_map.get_or_assign("title");
 
     serde_json::json!({
@@ -218,8 +237,8 @@ fn build_document_tree(page: &pardus_core::Page, node_map: &mut NodeMap) -> Valu
             "localName": "",
             "childNodeCount": 1,
             "children": [{
-                "nodeId": html_id,
-                "backendNodeId": html_id,
+                "nodeId": doc_id,
+                "backendNodeId": doc_id,
                 "nodeType": 1,
                 "nodeName": "HTML",
                 "localName": "html",

@@ -31,7 +31,7 @@ pub async fn run(
             output_result(&result, &format);
         }
         InteractAction::Type { selector, value } => {
-            let result = browser.type_text(&selector, &value)?;
+            let result = browser.type_text(&selector, &value).await?;
             output_result(&result, &format);
         }
         InteractAction::Submit { selector, field } => {

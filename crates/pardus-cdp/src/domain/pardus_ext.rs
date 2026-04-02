@@ -6,17 +6,15 @@ use crate::error::SERVER_ERROR;
 use crate::protocol::message::CdpErrorResponse;
 use crate::protocol::target::CdpSession;
 
-/// Custom Pardus domain for AI agent clients.
 pub struct PardusDomain;
 
 fn resolve_target_id(session: &CdpSession) -> &str {
     session.target_id.as_deref().unwrap_or("default")
 }
 
-/// Helper: get HTML and URL for a target, returning them as Option<String>.
-fn get_page_data(ctx: &DomainContext, target_id: &str) -> Option<(String, String)> {
-    let html = ctx.get_html(target_id)?;
-    let url = ctx.get_url(target_id).unwrap_or_default();
+async fn get_page_data(ctx: &DomainContext, target_id: &str) -> Option<(String, String)> {
+    let html = ctx.get_html(target_id).await?;
+    let url = ctx.get_url(target_id).await.unwrap_or_default();
     Some((html, url))
 }
 
@@ -45,7 +43,7 @@ impl CdpDomainHandler for PardusDomain {
                 HandleResult::Ack
             }
             "semanticTree" => {
-                match get_page_data(ctx, target_id) {
+                match get_page_data(ctx, target_id).await {
                     Some((html_str, url)) => {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         let tree = page.semantic_tree();
@@ -76,7 +74,7 @@ impl CdpDomainHandler for PardusDomain {
                 HandleResult::Success(result)
             }
             "getNavigationGraph" => {
-                match get_page_data(ctx, target_id) {
+                match get_page_data(ctx, target_id).await {
                     Some((html_str, url)) => {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         let graph = page.navigation_graph();
@@ -98,7 +96,7 @@ impl CdpDomainHandler for PardusDomain {
                 }
             }
             "detectActions" => {
-                match get_page_data(ctx, target_id) {
+                match get_page_data(ctx, target_id).await {
                     Some((html_str, url)) => {
                         let page = pardus_core::Page::from_html(&html_str, &url);
                         let elements = page.interactive_elements();
@@ -131,10 +129,6 @@ impl CdpDomainHandler for PardusDomain {
     }
 }
 
-/// Handle interaction actions.
-///
-/// Page is !Send (scraper::Html uses Cell internally), so we must extract all
-/// needed data synchronously before crossing any .await point.
 async fn handle_interact(
     action: &str,
     selector: &str,
@@ -145,8 +139,8 @@ async fn handle_interact(
 ) -> Value {
     match action {
         "click" => {
-            // Extract href from the element synchronously, then navigate asynchronously.
-            let href = get_page_data(ctx, target_id).and_then(|(html_str, url)| {
+            let page_data = get_page_data(ctx, target_id).await;
+            let href = page_data.as_ref().and_then(|(html_str, url)| {
                 let page = pardus_core::Page::from_html(&html_str, &url);
                 page.query(selector).and_then(|el| el.href.clone())
             });
@@ -156,24 +150,20 @@ async fn handle_interact(
                     Ok(()) => serde_json::json!({ "success": true, "action": "click", "selector": selector }),
                     Err(e) => serde_json::json!({ "success": false, "error": e.to_string() }),
                 }
-            } else {
-                // Check if element exists at all (could be a non-link button).
-                let exists = get_page_data(ctx, target_id)
-                    .map(|(html_str, url)| {
-                        let page = pardus_core::Page::from_html(&html_str, &url);
-                        page.query(selector).is_some()
-                    })
-                    .unwrap_or(false);
+            } else if let Some((html_str, url)) = page_data {
+                let page = pardus_core::Page::from_html(&html_str, &url);
+                let exists = page.query(selector).is_some();
                 if exists {
                     serde_json::json!({ "success": true, "action": "click", "selector": selector, "note": "Element exists but is not a link" })
                 } else {
                     serde_json::json!({ "success": false, "error": "Element not found" })
                 }
+            } else {
+                serde_json::json!({ "success": false, "error": "No active page" })
             }
         }
         "type" => {
-            // type_text is synchronous, so Page doesn't cross an await.
-            match get_page_data(ctx, target_id) {
+            match get_page_data(ctx, target_id).await {
                 Some((html_str, url)) => {
                     let page = pardus_core::Page::from_html(&html_str, &url);
                     match page.query(selector) {
@@ -190,8 +180,7 @@ async fn handle_interact(
             }
         }
         "submit" => {
-            // Extract element existence synchronously.
-            let form_found = get_page_data(ctx, target_id)
+            let form_found = get_page_data(ctx, target_id).await
                 .map(|(html_str, url)| {
                     let page = pardus_core::Page::from_html(&html_str, &url);
                     page.query(selector).is_some()

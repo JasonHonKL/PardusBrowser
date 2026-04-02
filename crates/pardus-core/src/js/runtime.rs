@@ -21,7 +21,7 @@ use super::extension::pardus_dom;
 
 const SCRIPT_TIMEOUT_MS: u64 = 2000; // 2s per script
 const MAX_SCRIPT_SIZE: usize = 100_000; // 100KB
-const MAX_SCRIPTS: usize = 50;
+const MAX_SCRIPTS: usize = 20;
 const EVENT_LOOP_TIMEOUT_MS: u64 = 500;
 const EVENT_LOOP_MAX_POLLS: usize = 3;
 const THREAD_JOIN_GRACE_MS: u64 = 2000;
@@ -55,6 +55,80 @@ const ANALYTICS_PATTERNS: &[&str] = &[
     "helpscout",
     "heap.io",
     "logrocket",
+    // Framework patterns that cause hangs
+    "react",
+    "reactdom",
+    "vue",
+    "vuejs",
+    "angular",
+    "next.js",
+    "nuxt",
+    "ember",
+    "backbone",
+    "knockout",
+    "jquery",
+    "webpack",
+    "babel",
+    "polyfill",
+    "core-js",
+    "regenerator",
+    // Module loaders that may cause issues
+    "systemjs",
+    "requirejs",
+    "amd",
+    // Lazy loading / dynamic imports that may hang
+    "import(",
+    "__webpack_require__",
+    // Service workers and PWA
+    "serviceworker",
+    "navigator.serviceworker",
+    // Mutation observer loops
+    "mutationobserver",
+    // ResizeObserver loops
+    "resizeobserver",
+    // IntersectionObserver patterns
+    "intersectionobserver",
+    // WebGL that may crash
+    "webgl",
+    "getcontext(\"webgl\")",
+    // Web Workers
+    "worker",
+    "webworker",
+    "sharedworker",
+    // WebSocket connections
+    "websocket",
+    "new websocket",
+];
+
+/// Patterns that indicate scripts likely to hang or cause issues
+const PROBLEMATIC_PATTERNS: &[&str] = &[
+    // Infinite loop patterns
+    "while(true)",
+    "while (true)",
+    "for(;;)",
+    "for (;;)",
+    "while(1)",
+    "while (1)",
+    // Event listener spam
+    "addeventlistener",
+    "attachevent",
+    // Timer spam
+    "setinterval",
+    // Animation loops
+    "requestanimationframe",
+    "requestidlecallback",
+    // Promise chains that may not resolve
+    "promise.resolve().then",
+    "promise.resolve().catch",
+    // Async generators
+    "async function*",
+    // Deprecated patterns
+    "arguments.callee",
+    // Eval usage (often dynamic code)
+    "eval(",
+    "new function(",
+    // Function constructor
+    "function()",
 ];
 
 // ==================== Script Extraction ====================
@@ -105,6 +179,11 @@ fn extract_scripts(html: &str) -> Vec<ScriptInfo> {
                 return None;
             }
 
+            // Skip scripts with problematic patterns (infinite loops, event spam, etc.)
+            if is_problematic_script(&code) {
+                return None;
+            }
+
             Some(ScriptInfo {
                 name: format!("inline_script_{}.js", i),
                 code,
@@ -117,6 +196,11 @@ fn extract_scripts(html: &str) -> Vec<ScriptInfo> {
 fn is_analytics_script(code: &str) -> bool {
     let lower = code.to_lowercase();
     ANALYTICS_PATTERNS.iter().any(|p| lower.contains(p))
+}
+
+fn is_problematic_script(code: &str) -> bool {
+    let lower = code.to_lowercase();
+    PROBLEMATIC_PATTERNS.iter().any(|p| lower.contains(p))
 }
 
 fn transform_module_syntax(code: &str) -> String {
@@ -634,5 +718,51 @@ export function hello() {}</script>
         "#;
         let result = execute_js(html, "https://example.com", 100).await.unwrap();
         assert!(result.contains("<html>"));
+    }
+
+    // ==================== is_problematic_script Tests ====================
+
+    #[test]
+    fn test_is_problematic_script_infinite_loops() {
+        assert!(is_problematic_script("while(true) { }"));
+        assert!(is_problematic_script("while (true) { }"));
+        assert!(is_problematic_script("for(;;) { }"));
+        assert!(is_problematic_script("for (;;) { }"));
+        assert!(is_problematic_script("while(1) { }"));
+        assert!(is_problematic_script("while (1) { }"));
+    }
+
+    #[test]
+    fn test_is_problematic_script_event_listeners() {
+        assert!(is_problematic_script("element.addEventListener('click', handler)"));
+        assert!(is_problematic_script("setInterval(function() {}, 100)"));
+        assert!(is_problematic_script("requestAnimationFrame(render)"));
+    }
+
+    #[test]
+    fn test_is_problematic_script_react_vue() {
+        assert!(is_analytics_script("const React = require('react')"));
+        assert!(is_analytics_script("import Vue from 'vue'"));
+        assert!(is_analytics_script("angular.module('app')"));
+    }
+
+    #[test]
+    fn test_is_problematic_script_safe_code() {
+        // These should NOT be flagged as problematic
+        assert!(!is_problematic_script("function add(a, b) { return a + b; }"));
+        assert!(!is_problematic_script("const x = 1;"));
+        assert!(!is_problematic_script("document.body.innerHTML = 'Hello';"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_js_skips_problematic_scripts() {
+        let html = r#"
+            <html><body>
+                <script>while(true) { }</script>
+                <script>document.body.innerHTML = 'Safe';</script>
+            </body></html>
+        "#;
+        let result = execute_js(html, "https://example.com", 100).await.unwrap();
+        assert!(result.contains("Safe"));
     }
 }

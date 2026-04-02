@@ -47,5 +47,5 @@ pub mod tab;
 pub mod manager;
 
 pub use state::TabState;
-pub use tab::Tab;
+pub use tab::{Tab, TabConfig};
 pub use manager::TabManager;

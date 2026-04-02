@@ -219,6 +219,9 @@ async fn submit_post_urlencoded(
     action_url: &str,
     fields: &HashMap<String, String>,
 ) -> anyhow::Result<Page> {
+    use std::time::Instant;
+    let start = Instant::now();
+
     let field_pairs: Vec<(&String, &String)> = fields.iter().collect();
     let response = app
         .http_client
@@ -236,6 +239,30 @@ async fn submit_post_urlencoded(
         .map(|s| s.to_string());
 
     let body = response.text().await?;
+    let timing_ms = start.elapsed().as_millis();
+
+    let record = pardus_debug::NetworkRecord::fetched(
+        {
+            let log = app.network_log.lock().unwrap_or_else(|e| e.into_inner());
+            log.next_id()
+        },
+        "POST".to_string(),
+        pardus_debug::ResourceType::Document,
+        "document · form submission".to_string(),
+        final_url.clone(),
+        pardus_debug::Initiator::Other,
+    );
+    {
+        let mut log = app.network_log.lock().unwrap_or_else(|e| e.into_inner());
+        let mut r = record;
+        r.status = Some(status);
+        r.content_type = content_type.clone();
+        r.body_size = Some(body.len());
+        r.timing_ms = Some(timing_ms);
+        r.response_headers = response_headers_from_content_type(&content_type);
+        log.push(r);
+    }
+
     crate::page::validate_content_type_pub(content_type.as_deref(), &final_url)?;
     let html = scraper::Html::parse_document(&body);
     let base_url = Page::extract_base_url_static(&html, &final_url);
@@ -247,4 +274,11 @@ async fn submit_post_urlencoded(
         html,
         base_url,
     })
+}
+
+fn response_headers_from_content_type(ct: &Option<String>) -> Vec<(String, String)> {
+    match ct {
+        Some(c) => vec![("content-type".to_string(), c.clone())],
+        None => vec![],
+    }
 }

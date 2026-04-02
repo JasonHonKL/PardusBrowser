@@ -5,6 +5,8 @@ use std::time::Instant;
 use url::Url;
 
 use crate::app::App;
+use crate::push::EarlyScanner;
+use crate::resource::ResourceFetcher;
 use crate::semantic::tree::{SemanticTree, SemanticRole, SemanticNode};
 use crate::navigation::graph::NavigationGraph;
 use crate::interact::element::{ElementHandle, element_to_handle};
@@ -59,6 +61,9 @@ impl Page {
 
         validate_content_type_pub(content_type.as_deref(), &final_url)?;
 
+        // Speculative push: scan <head> and pre-fetch critical subresources
+        spawn_push_fetches(&app.http_client, &body, &final_url, app.config.push.enable_push);
+
         let html = Html::parse_document(&body);
         let base_url = Self::extract_base_url(&html, &final_url);
 
@@ -97,6 +102,9 @@ impl Page {
         record_main_request(app, url, &final_url, status, &content_type, body_size, timing_ms, &resp_headers);
 
         validate_content_type_pub(content_type.as_deref(), &final_url)?;
+
+        // Speculative push: scan <head> and pre-fetch critical subresources
+        spawn_push_fetches(&app.http_client, &body, &final_url, app.config.push.enable_push);
 
         let base_url = Self::extract_base_url(&Html::parse_document(&body), &final_url);
         let final_body = crate::js::execute_js(&body, &base_url, wait_ms).await?;
@@ -391,6 +399,47 @@ pub(crate) fn validate_content_type_pub(content_type: Option<&str>, url: &str) -
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// HTTP/2 push simulation: speculative early resource fetching
+// ---------------------------------------------------------------------------
+
+fn spawn_push_fetches(
+    client: &reqwest::Client,
+    html_body: &str,
+    base_url: &str,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+
+    let scanner = EarlyScanner::new();
+    let result = scanner.scan(html_body, base_url);
+
+    if result.resources.is_empty() {
+        return;
+    }
+
+    let resources: Vec<crate::resource::Resource> = result.resources;
+    let client = client.clone();
+
+    tokio::spawn(async move {
+        let config = crate::resource::ResourceConfig::default();
+        let fetcher = ResourceFetcher::new(client, config);
+
+        for resource in &resources {
+            if let Err(e) = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                fetcher.fetch(&resource.url),
+            )
+            .await
+            {
+                tracing::trace!("push fetch failed for {}: {}", resource.url, e);
+            }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------

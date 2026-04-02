@@ -1,12 +1,19 @@
 pub mod app;
 pub mod browser;
+pub mod cache;
 pub mod config;
+pub mod http;
 pub mod interact;
+pub mod intercept;
 #[cfg(feature = "js")]
 pub mod js;
 pub mod navigation;
 pub mod output;
 pub mod page;
+pub mod parser;
+pub mod prefetch;
+pub mod push;
+pub mod resource;
 pub mod semantic;
 pub mod session;
 pub mod tab;
@@ -25,3 +32,4 @@ pub use output::json_formatter::format_json;
 pub use interact::{ElementHandle, FormState, InteractionResult, ScrollDirection};
 pub use tab::tab::TabConfig;
 pub use tab::{Tab, TabId, TabManager};
+pub use push::{PushCache, PushEntry, push_cache::PushSource, PushCacheStats, EarlyScanner};

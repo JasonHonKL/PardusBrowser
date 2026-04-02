@@ -5,11 +5,6 @@ use crate::app::App;
 use crate::page::Page;
 use super::actions::InteractionResult;
 
-/// Wait for a CSS selector to appear on the page.
-///
-/// First checks the current page's HTML (instant return if present).
-/// If not found, polls by re-fetching the URL at the given interval
-/// until the timeout is reached.
 pub async fn wait_for_selector(
     app: &Arc<App>,
     page: &Page,
@@ -17,7 +12,6 @@ pub async fn wait_for_selector(
     timeout_ms: u32,
     interval_ms: u32,
 ) -> anyhow::Result<InteractionResult> {
-    // First check: does the current page already have it?
     if page.has_selector(selector) {
         return Ok(InteractionResult::WaitSatisfied {
             selector: selector.to_string(),
@@ -25,7 +19,6 @@ pub async fn wait_for_selector(
         });
     }
 
-    // Polling loop: re-fetch and check.
     let timeout = Duration::from_millis(timeout_ms as u64);
     let interval = Duration::from_millis(interval_ms as u64);
     let start = Instant::now();
@@ -42,7 +35,7 @@ pub async fn wait_for_selector(
                     });
                 }
             }
-            Err(_) => continue, // Network error, keep trying
+            Err(_) => continue,
         }
     }
 
@@ -52,7 +45,6 @@ pub async fn wait_for_selector(
     })
 }
 
-/// Wait for a CSS selector with JS execution enabled.
 pub async fn wait_for_selector_with_js(
     app: &Arc<App>,
     page: &Page,
@@ -61,7 +53,6 @@ pub async fn wait_for_selector_with_js(
     interval_ms: u32,
     js_wait_ms: u32,
 ) -> anyhow::Result<InteractionResult> {
-    // First check: does the current page already have it?
     if page.has_selector(selector) {
         return Ok(InteractionResult::WaitSatisfied {
             selector: selector.to_string(),

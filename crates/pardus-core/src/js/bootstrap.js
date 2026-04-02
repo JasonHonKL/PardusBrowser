@@ -561,7 +561,7 @@ const window = {
   fetch,
   addEventListener: document.addEventListener.bind(document),
   removeEventListener: document.removeEventListener.bind(document),
-  location: {
+  location: new Proxy({
     href: "",
     origin: "",
     protocol: "https:",
@@ -570,7 +570,19 @@ const window = {
     pathname: "/",
     search: "",
     hash: ""
-  },
+  }, {
+    set(target, prop, value) {
+      target[prop] = value;
+      // Detect navigation via window.location.href = '/url'
+      if (prop === 'href') {
+        var docEl = document.documentElement;
+        if (docEl) {
+          docEl.setAttribute('data-pardus-navigation-href', String(value));
+        }
+      }
+      return true;
+    }
+  }),
   navigator: { userAgent: "PardusBrowser/0.1.0" },
   console: {
     log(...a) {},

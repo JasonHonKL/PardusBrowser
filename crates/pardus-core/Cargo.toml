@@ -26,13 +26,16 @@ thiserror = { workspace = true }
 
 # Utilities
 regex = "1"
+async-trait = { workspace = true }
 smallvec = "1"
 base64 = { workspace = true }
 parking_lot = { workspace = true }
+dashmap = { workspace = true }
 
 # Network debugging
 pardus-debug = { path = "../pardus-debug" }
 http = "1"
+chrono = { workspace = true }
 
 # JS execution (optional — enables --js flag)
 deno_core = { workspace = true, optional = true }
@@ -43,13 +46,17 @@ blake3 = { workspace = true, optional = true }
 
 # Streaming parser (optional — enables lol_html streaming)
 lol_html = { workspace = true, optional = true }
-bytes = { version = "1", optional = true }
+bytes = { workspace = true, optional = true }
+
+# HTTP/2 push (optional — low-level PUSH_PROMISE reception)
+h2 = { workspace = true, optional = true }
 
 [features]
 default = ["js"]
-js = ["deno_core", "futures-util", "reqwest/stream"]
+js = ["deno_core", "futures-util", "reqwest/stream", "bytes"]
 cache = ["blake3"]
-streaming-parser = ["lol_html", "bytes"]
+streaming-parser = ["lol_html"]
+h2-push = ["h2"]
 
 [dev-dependencies]
 tempfile = "3"

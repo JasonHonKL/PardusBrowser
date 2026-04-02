@@ -11,6 +11,7 @@ path = "src/main.rs"
 pardus-core = { path = "../pardus-core" }
 pardus-cdp = { path = "../pardus-cdp", default-features = false }
 pardus-debug = { path = "../pardus-debug" }
+pardus-kg = { path = "../pardus-kg" }
 clap = { version = "4", features = ["derive"] }
 tokio = { workspace = true }
 serde_json = { workspace = true }
@@ -18,3 +19,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 dirs = "6"
+rustyline = "15"
+shell-words = "1"

@@ -93,6 +93,21 @@ enum Commands {
         timeout: u64,
     },
 
+    /// Start persistent interactive REPL session
+    Repl {
+        /// Enable JavaScript execution by default
+        #[arg(long)]
+        js: bool,
+
+        /// Output format
+        #[arg(short, long, default_value = "md")]
+        format: OutputFormatArg,
+
+        /// Wait time for JS execution (ms)
+        #[arg(long, default_value = "3000")]
+        wait_ms: u32,
+    },
+
     /// Tab management commands
     Tab {
         #[command(subcommand)]
@@ -112,6 +127,44 @@ enum Commands {
         /// Only clean cache
         #[arg(long)]
         cache_only: bool,
+    },
+
+    /// Map a site's functional structure into a Knowledge Graph
+    Map {
+        /// Root URL to start mapping from
+        url: String,
+
+        /// Output file path (JSON)
+        #[arg(short, long, default_value = "kg.json")]
+        output: PathBuf,
+
+        /// Maximum crawl depth
+        #[arg(short, long, default_value = "3")]
+        depth: usize,
+
+        /// Maximum pages to visit
+        #[arg(long, default_value = "50")]
+        max_pages: usize,
+
+        /// Delay between requests (ms)
+        #[arg(long, default_value = "200")]
+        delay: u64,
+
+        /// Skip transition verification
+        #[arg(long)]
+        skip_verify: bool,
+
+        /// Discover pagination transitions
+        #[arg(long, default_value = "true")]
+        pagination: bool,
+
+        /// Discover hash navigation
+        #[arg(long, default_value = "true")]
+        hash_nav: bool,
+
+        /// Verbose logging
+        #[arg(short, long)]
+        verbose: bool,
     },
 }
 
@@ -157,7 +210,7 @@ pub enum InteractAction {
     },
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Debug, ValueEnum)]
 pub enum OutputFormatArg {
     Md,
     Tree,
@@ -247,6 +300,22 @@ async fn main() -> Result<()> {
                     commands::tab::navigate(&url).await?;
                 }
             }
+        }
+        Commands::Repl { js, format, wait_ms } => {
+            commands::repl::run(js, format, wait_ms).await?;
+        }
+        Commands::Map {
+            url,
+            output,
+            depth,
+            max_pages,
+            delay,
+            skip_verify,
+            pagination,
+            hash_nav,
+            verbose,
+        } => {
+            commands::map::run(&url, &output, depth, max_pages, delay, skip_verify, pagination, hash_nav, verbose).await?;
         }
     }
 

@@ -67,20 +67,20 @@ impl CdpDomainHandler for PageDomain {
 
                 match ctx.navigate(&target_id, url).await {
                     Ok(()) => {
-                        let final_url = ctx.get_url(&target_id).unwrap_or_else(|| url.to_string());
-                        let _ = ctx.event_tx.send(CdpEvent {
+                        let final_url = ctx.get_url(&target_id).await.unwrap_or_else(|| url.to_string());
+                        let _ = ctx.event_bus.send(CdpEvent {
                             method: "Page.frameNavigated".to_string(),
                             params: serde_json::json!({
                                 "frame": { "id": target_id, "url": final_url, "mimeType": "text/html" }
                             }),
                             session_id: Some(session.session_id.clone()),
                         });
-                        let _ = ctx.event_tx.send(CdpEvent {
+                        let _ = ctx.event_bus.send(CdpEvent {
                             method: "Page.domContentEventFired".to_string(),
                             params: serde_json::json!({ "timestamp": now_timestamp() }),
                             session_id: Some(session.session_id.clone()),
                         });
-                        let _ = ctx.event_tx.send(CdpEvent {
+                        let _ = ctx.event_bus.send(CdpEvent {
                             method: "Page.loadEventFired".to_string(),
                             params: serde_json::json!({ "timestamp": now_timestamp() }),
                             session_id: Some(session.session_id.clone()),
@@ -99,7 +99,7 @@ impl CdpDomainHandler for PageDomain {
                 };
                 match ctx.navigate(&target_id, &url).await {
                     Ok(()) => {
-                        let _ = ctx.event_tx.send(CdpEvent {
+                        let _ = ctx.event_bus.send(CdpEvent {
                             method: "Page.loadEventFired".to_string(),
                             params: serde_json::json!({ "timestamp": now_timestamp() }),
                             session_id: Some(session.session_id.clone()),

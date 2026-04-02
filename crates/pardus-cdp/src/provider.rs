@@ -101,10 +101,12 @@ pub struct HttpScreenshotProvider {
 }
 
 impl HttpScreenshotProvider {
-    pub fn new(endpoint: &str, timeout_ms: u64) -> Self {
+    /// Create a new HttpScreenshotProvider with a shared HTTP client.
+    /// The client should be configured with connection pooling settings.
+    pub fn new(client: reqwest::Client, endpoint: &str, timeout_ms: u64) -> Self {
         Self {
             endpoint: endpoint.to_string(),
-            client: reqwest::Client::new(),
+            client,
             timeout: Duration::from_millis(timeout_ms),
         }
     }

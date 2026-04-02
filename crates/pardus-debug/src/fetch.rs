@@ -4,13 +4,39 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
+/// Result from checking a pre-fetch cache.
+#[derive(Debug, Clone)]
+pub struct CacheHit {
+    pub status: u16,
+    pub body_size: usize,
+    pub content_type: Option<String>,
+}
+
 pub async fn fetch_subresources(
     client: &reqwest::Client,
     log: &Arc<std::sync::Mutex<NetworkLog>>,
     concurrency: usize,
 ) {
+    fetch_subresources_with_cache(client, log, concurrency, None::<fn(&str) -> Option<CacheHit>>).await
+}
+
+/// Fetch subresources, optionally checking a pre-fetch cache first.
+///
+/// The `cache_check` closure is called for each unfetched resource URL.
+/// If it returns `Some(CacheHit)`, the resource is marked as fetched in
+/// the network log without making an HTTP request.
+pub async fn fetch_subresources_with_cache<F>(
+    client: &reqwest::Client,
+    log: &Arc<std::sync::Mutex<NetworkLog>>,
+    concurrency: usize,
+    cache_check: Option<F>,
+)
+where
+    F: Fn(&str) -> Option<CacheHit> + Send + Sync + 'static,
+{
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut join_set = JoinSet::new();
+    let cache_check: Arc<Option<F>> = Arc::new(cache_check);
 
     let entries: Vec<NetworkRecord> = {
         let log = log.lock().unwrap();
@@ -26,10 +52,30 @@ pub async fn fetch_subresources(
         let client = client.clone();
         let log = log.clone();
         let id = record.id;
+        let url = record.url.clone();
+        let cache_check = cache_check.clone();
 
         join_set.spawn(async move {
             let start = Instant::now();
-            let result = client.get(&record.url).send().await;
+
+            if let Some(ref check) = *cache_check {
+                if let Some(hit) = check(&url) {
+                    let timing = Some(start.elapsed().as_millis());
+                    let mut log = log.lock().unwrap();
+                    if let Some(r) = log.records.iter_mut().find(|r| r.id == id) {
+                        r.status = Some(hit.status);
+                        r.status_text = Some("OK".to_string());
+                        r.content_type = hit.content_type;
+                        r.body_size = Some(hit.body_size);
+                        r.timing_ms = timing;
+                        r.response_headers = vec![("x-push-cache".to_string(), "hit".to_string())];
+                    }
+                    drop(permit);
+                    return;
+                }
+            }
+
+            let result = client.get(&url).send().await;
 
             let (status, status_text, content_type, body_size, headers, error) = match result {
                 Ok(resp) => {
@@ -194,5 +240,49 @@ mod tests {
         assert!(r.body_size.is_some());
         assert!(r.timing_ms.is_some());
         assert!(!r.response_headers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_with_cache_hit() {
+        let client = make_client();
+        let mut log = NetworkLog::new();
+        log.push(NetworkRecord::discovered(1, ResourceType::Stylesheet, "cached.css".into(), "https://example.com/cached.css".into(), Initiator::Link));
+        let log = Arc::new(std::sync::Mutex::new(log));
+
+        let cache_check = |url: &str| -> Option<CacheHit> {
+            if url == "https://example.com/cached.css" {
+                Some(CacheHit {
+                    status: 200,
+                    body_size: 1024,
+                    content_type: Some("text/css".to_string()),
+                })
+            } else {
+                None
+            }
+        };
+
+        fetch_subresources_with_cache(&client, &log, 6, Some(cache_check)).await;
+        let log = log.lock().unwrap();
+        let r = &log.records[0];
+        assert_eq!(r.status, Some(200));
+        assert_eq!(r.body_size, Some(1024));
+        assert_eq!(r.content_type, Some("text/css".to_string()));
+        assert!(r.timing_ms.is_some());
+        assert!(!r.response_headers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_with_cache_miss() {
+        let client = make_client();
+        let mut log = NetworkLog::new();
+        log.push(NetworkRecord::discovered(1, ResourceType::Document, "test".into(), "https://example.com".into(), Initiator::Navigation));
+        let log = Arc::new(std::sync::Mutex::new(log));
+
+        let cache_check = |_: &str| -> Option<CacheHit> { None };
+
+        fetch_subresources_with_cache(&client, &log, 6, Some(cache_check)).await;
+        let log = log.lock().unwrap();
+        let r = &log.records[0];
+        assert!(r.status.is_some() || r.error.is_some());
     }
 }

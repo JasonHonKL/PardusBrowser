@@ -41,6 +41,8 @@ pub struct Tab {
     pub history: Vec<String>,
     /// Current position in history
     pub history_index: usize,
+    /// Current memory usage in bytes
+    pub memory_usage_bytes: usize,
 }
 
 impl std::fmt::Debug for Tab {
@@ -53,6 +55,7 @@ impl std::fmt::Debug for Tab {
             .field("page_loaded", &self.page.is_some())
             .field("history_len", &self.history.len())
             .field("history_index", &self.history_index)
+            .field("memory_usage_mb", &(self.memory_usage_bytes / 1024 / 1024))
             .finish()
     }
 }
@@ -68,6 +71,8 @@ pub struct TabConfig {
     pub stealth: bool,
     /// Capture network log for this tab
     pub network_log: bool,
+    /// Maximum memory limit for this tab in MB (0 = unlimited)
+    pub memory_limit_mb: usize,
 }
 
 impl Default for TabConfig {
@@ -77,6 +82,7 @@ impl Default for TabConfig {
             wait_ms: 3000,
             stealth: false,
             network_log: false,
+            memory_limit_mb: 0, // 0 means unlimited
         }
     }
 }
@@ -100,6 +106,7 @@ impl Tab {
             config: TabConfig::default(),
             history: vec![url],
             history_index: 0,
+            memory_usage_bytes: 0,
         }
     }
 
@@ -195,17 +202,14 @@ impl Tab {
         &mut self,
         client: &reqwest::Client,
         network_log: &Arc<Mutex<pardus_debug::NetworkLog>>,
+        config: &BrowserConfig,
         js_enabled: bool,
         wait_ms: u32,
     ) -> anyhow::Result<&Page> {
         self.state = TabState::Loading;
         self.last_active = Instant::now();
 
-        let app = Arc::new(App {
-            http_client: client.clone(),
-            config: BrowserConfig::default(),
-            network_log: network_log.clone(),
-        });
+        let app = Arc::new(App::new(config.clone()));
 
         let result = if js_enabled {
             Page::from_url_with_js(&app, &self.url, wait_ms).await
@@ -240,6 +244,7 @@ impl Tab {
         &mut self,
         client: &reqwest::Client,
         network_log: &Arc<Mutex<pardus_debug::NetworkLog>>,
+        config: &BrowserConfig,
         url: &str,
         js_enabled: bool,
         wait_ms: u32,
@@ -247,7 +252,7 @@ impl Tab {
         self.state = TabState::Navigating;
         self.url = url.to_string();
         self.page = None;
-        self.load_with_client(client, network_log, js_enabled, wait_ms).await
+        self.load_with_client(client, network_log, config, js_enabled, wait_ms).await
     }
 
     /// Reload using a raw reqwest client.
@@ -255,10 +260,11 @@ impl Tab {
         &mut self,
         client: &reqwest::Client,
         network_log: &Arc<Mutex<pardus_debug::NetworkLog>>,
+        config: &BrowserConfig,
     ) -> anyhow::Result<&Page> {
         self.state = TabState::Loading;
         self.page = None;
-        self.load_with_client(client, network_log, self.config.js_enabled, self.config.wait_ms).await
+        self.load_with_client(client, network_log, config, self.config.js_enabled, self.config.wait_ms).await
     }
 
     /// Update the tab with a new page (e.g., after click navigation).
@@ -310,6 +316,8 @@ impl Tab {
             can_go_back: self.can_go_back(),
             can_go_forward: self.can_go_forward(),
             history_len: self.history.len(),
+            memory_usage_mb: self.memory_usage_mb(),
+            memory_limit_mb: self.config.memory_limit_mb,
         }
     }
 
@@ -337,6 +345,69 @@ impl Tab {
     pub fn interactive_elements(&self) -> Vec<ElementHandle> {
         self.page.as_ref().map(|p| p.interactive_elements()).unwrap_or_default()
     }
+
+    // -------------------------------------------------------------------
+    // Memory management methods
+    // -------------------------------------------------------------------
+
+    /// Get the memory limit in bytes (0 means unlimited)
+    pub fn memory_limit_bytes(&self) -> usize {
+        if self.config.memory_limit_mb == 0 {
+            0
+        } else {
+            self.config.memory_limit_mb * 1024 * 1024
+        }
+    }
+
+    /// Check if the tab has exceeded its memory limit
+    pub fn is_memory_limit_exceeded(&self) -> bool {
+        let limit = self.memory_limit_bytes();
+        limit > 0 && self.memory_usage_bytes > limit
+    }
+
+    /// Get memory usage in MB
+    pub fn memory_usage_mb(&self) -> usize {
+        self.memory_usage_bytes / 1024 / 1024
+    }
+
+    /// Update memory usage estimate based on current page content
+    pub fn update_memory_estimate(&mut self) {
+        self.memory_usage_bytes = self.estimate_memory_usage();
+    }
+
+    /// Estimate memory usage based on page content and history
+    fn estimate_memory_usage(&self) -> usize {
+        let mut total = 0usize;
+
+        // Page content size
+        if let Some(ref page) = self.page {
+            // Rough estimate: HTML string size + some overhead for parsed DOM
+            // This is an approximation - real DOM memory is hard to measure
+            total += page.url.len();
+            if let Some(title) = page.title() {
+                total += title.len();
+            }
+            if let Some(ref ct) = page.content_type {
+                total += ct.len();
+            }
+        }
+
+        // History storage
+        for url in &self.history {
+            total += url.len();
+        }
+
+        // Configuration and metadata overhead (rough estimate)
+        total += 1024; // Base overhead for tab structure
+
+        total
+    }
+
+    /// Free memory by clearing page content (useful when memory limit exceeded)
+    pub fn free_memory(&mut self) {
+        self.page = None;
+        self.memory_usage_bytes = 0;
+    }
 }
 
 /// Serializable tab information for display/debugging
@@ -349,4 +420,8 @@ pub struct TabInfo {
     pub can_go_back: bool,
     pub can_go_forward: bool,
     pub history_len: usize,
+    /// Memory usage in MB
+    pub memory_usage_mb: usize,
+    /// Memory limit in MB (0 means unlimited)
+    pub memory_limit_mb: usize,
 }

@@ -1,9 +1,10 @@
-//! Resource scheduler with HTTP/2 prioritization
+//! Resource scheduler with HTTP/2 prioritization and cache support
 
 use super::{Resource, ResourceConfig, ResourceKind};
 use super::priority::PriorityQueue;
-use super::fetcher::{ResourceFetcher, FetchResult};
+use super::fetcher::{CachedFetcher, FetchResult};
 
+use crate::cache::ResourceCache;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Semaphore};
@@ -11,7 +12,6 @@ use tokio::task::JoinSet;
 use tracing::{trace, instrument, debug};
 use url::Url;
 
-/// Task for resource fetching
 #[derive(Debug, Clone)]
 pub struct ResourceTask {
     pub url: String,
@@ -40,7 +40,6 @@ impl From<Resource> for ResourceTask {
     }
 }
 
-/// Schedule result
 #[derive(Debug)]
 pub struct ScheduleResult {
     pub tasks: Vec<ResourceTask>,
@@ -48,17 +47,15 @@ pub struct ScheduleResult {
     pub duration_ms: u64,
 }
 
-/// High-performance resource scheduler
 pub struct ResourceScheduler {
     config: ResourceConfig,
-    fetcher: ResourceFetcher,
-    /// Per-origin semaphores for limiting concurrency
+    fetcher: Arc<CachedFetcher>,
     origin_semaphores: parking_lot::Mutex<HashMap<String, Arc<Semaphore>>>,
 }
 
 impl ResourceScheduler {
-    pub fn new(config: ResourceConfig) -> Self {
-        let fetcher = ResourceFetcher::new(config.clone());
+    pub fn new(client: reqwest::Client, config: ResourceConfig, cache: Arc<ResourceCache>) -> Self {
+        let fetcher = CachedFetcher::new(client, config.clone(), cache);
         Self {
             config,
             fetcher,
@@ -66,7 +63,6 @@ impl ResourceScheduler {
         }
     }
 
-    /// Schedule a batch of tasks with optimal ordering
     #[instrument(skip(self, tasks), level = "debug")]
     pub async fn schedule_batch(
         self: Arc<Self>,
@@ -75,16 +71,13 @@ impl ResourceScheduler {
         let start = std::time::Instant::now();
         debug!("scheduling {} tasks", tasks.len());
 
-        // Sort by priority (critical first, then by origin grouping)
         let mut queue = PriorityQueue::new();
         for task in tasks {
             queue.push(task.priority, task);
         }
 
-        // Group by origin for connection reuse
         let by_origin = self.group_by_origin(&queue.into_vec());
 
-        // Spawn fetches for each origin group
         let mut results = Vec::new();
         let mut join_set = JoinSet::new();
 
@@ -95,7 +88,6 @@ impl ResourceScheduler {
             });
         }
 
-        // Collect results
         while let Some(Ok(group_results)) = join_set.join_next().await {
             results.extend(group_results);
         }
@@ -106,7 +98,6 @@ impl ResourceScheduler {
         results
     }
 
-    /// Group tasks by origin for connection optimization
     fn group_by_origin(
         &self,
         tasks: &[ResourceTask],
@@ -122,7 +113,6 @@ impl ResourceScheduler {
         groups
     }
 
-    /// Fetch all resources from a single origin
     async fn fetch_origin_group(
         self: Arc<Self>,
         origin: String,
@@ -141,31 +131,24 @@ impl ResourceScheduler {
             let result = self.fetcher.fetch(&task.url).await;
             results.push(result);
 
-            // Keep permit alive until fetch completes
             drop(permit);
         }
 
         results
     }
 
-    /// Get or create semaphore for origin
-    fn get_origin_semaphore(&self,
-        origin: &str,
-    ) -> Arc<Semaphore> {
+    fn get_origin_semaphore(&self, origin: &str) -> Arc<Semaphore> {
         let mut semaphores = self.origin_semaphores.lock();
         semaphores.entry(origin.to_string())
             .or_insert_with(|| Arc::new(Semaphore::new(self.config.max_concurrent)))
             .clone()
     }
 
-    /// Schedule with priority hints for HTTP/2
     pub async fn schedule_with_priority(
         &self,
         tasks: Vec<ResourceTask>,
         _priority_hints: HashMap<String, u8>,
     ) -> Vec<FetchResult> {
-        // HTTP/2 prioritization is handled by the HTTP client
-        // We just ensure proper ordering here
         let mut queue = PriorityQueue::new();
         for task in tasks {
             queue.push(task.priority, task);
@@ -181,7 +164,6 @@ impl ResourceScheduler {
     }
 }
 
-/// Critical path resource fetcher
 pub struct CriticalPathFetcher {
     scheduler: Arc<ResourceScheduler>,
 }
@@ -191,23 +173,19 @@ impl CriticalPathFetcher {
         Self { scheduler }
     }
 
-    /// Fetch render-blocking resources first
     pub async fn fetch_critical(
         &self,
         resources: Vec<Resource>,
     ) -> Vec<FetchResult> {
-        // Separate critical from non-critical
         let (critical, non_critical): (Vec<_>, Vec<_>) = resources.into_iter()
             .partition(|r| matches!(r.kind, ResourceKind::Stylesheet | ResourceKind::Script));
 
-        // Fetch critical first
         let critical_tasks: Vec<_> = critical.into_iter()
             .map(|r| ResourceTask::from(r))
             .collect();
 
         let mut results = self.scheduler.clone().schedule_batch(critical_tasks).await;
 
-        // Then fetch non-critical in parallel
         if !non_critical.is_empty() {
             let non_critical_tasks: Vec<_> = non_critical.into_iter()
                 .map(|r| ResourceTask::from(r))
@@ -220,7 +198,6 @@ impl CriticalPathFetcher {
     }
 }
 
-/// Stream fetcher for progressive loading
 pub struct StreamingResourceFetcher {
     tx: mpsc::Sender<FetchResult>,
 }
@@ -236,14 +213,12 @@ impl StreamingResourceFetcher {
         scheduler: Arc<ResourceScheduler>,
         resources: Vec<ResourceTask>,
     ) -> anyhow::Result<()> {
-        // Spawn fetch tasks that send results as they complete
         for task in resources {
             let tx = self.tx.clone();
             let sched = scheduler.clone();
 
             tokio::spawn(async move {
-                let fetcher = ResourceFetcher::new(sched.config.clone());
-                let result = fetcher.fetch(&task.url).await;
+                let result = sched.fetcher.fetch(&task.url).await;
                 let _ = tx.send(result).await;
             });
         }

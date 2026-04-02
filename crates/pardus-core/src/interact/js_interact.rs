@@ -1,6 +1,6 @@
 //! JS-level interaction via deno_core DOM.
 //!
-//! When JS is enabled, interactions (click/type/scroll) dispatch events
+//! When JS is enabled, interactions (click/type/scroll/submit) dispatch events
 //! on the in-memory DOM, execute inline event handlers (onclick, onchange, etc.),
 //! and return the modified HTML as a new page state.
 
@@ -15,6 +15,7 @@ use scraper::{Html, Selector};
 use url::Url;
 
 use crate::interact::actions::InteractionResult;
+use crate::interact::form::FormState;
 use crate::interact::scroll::ScrollDirection;
 use crate::js::dom::DomDocument;
 use crate::js::extension::pardus_dom;
@@ -63,6 +64,10 @@ struct InteractionThreadResult {
     html: Option<String>,
     click_prevented: bool,
     href: Option<String>,
+    /// Detected via Proxy setter on window.location in bootstrap.js
+    navigation_href: Option<String>,
+    /// Whether a submit handler called preventDefault
+    submit_prevented: Option<bool>,
 }
 
 fn execute_interaction_inner(
@@ -117,7 +122,7 @@ fn execute_interaction_inner(
     // Run event loop briefly
     let _ = runtime.run_event_loop(PollEventLoopOptions::default());
 
-    // Read results from DomDocument data attributes (set by interaction JS)
+    // Read results from DomDocument data attributes (set by interaction JS and bootstrap Proxy)
     let dom_ref = dom.borrow();
     let doc_el = dom_ref.document_element();
     let click_prevented = dom_ref
@@ -127,20 +132,28 @@ fn execute_interaction_inner(
     let href = dom_ref
         .get_attribute(doc_el, "data-pardus-clicked-href")
         .filter(|s| !s.is_empty());
+    let navigation_href = dom_ref
+        .get_attribute(doc_el, "data-pardus-navigation-href")
+        .filter(|s| !s.is_empty());
+    let submit_prevented = dom_ref
+        .get_attribute(doc_el, "data-pardus-submit-prevented")
+        .map(|v| v == "true");
 
     let output = dom_ref.to_html();
     Ok(InteractionThreadResult {
         html: Some(output),
         click_prevented,
         href,
+        navigation_href,
+        submit_prevented,
     })
 }
 
 /// Shared helper: create DomDocument from HTML, run bootstrap + inline handlers + interaction JS,
 /// serialize DOM back to HTML.
 ///
-/// Communication of results (href, click_prevented) happens via data attributes
-/// on the <html> element, which we read from the DomDocument after execution.
+/// Communication of results (href, click_prevented, navigation_href, submit_prevented) happens
+/// via data attributes on the <html> element, which we read from the DomDocument after execution.
 fn execute_interaction_thread(
     html: String,
     base_url: String,
@@ -153,6 +166,8 @@ fn execute_interaction_thread(
         html: None,
         click_prevented: false,
         href: None,
+        navigation_href: None,
+        submit_prevented: None,
     }));
     let result_clone = result.clone();
 
@@ -174,6 +189,8 @@ fn execute_interaction_thread(
                     html: None,
                     click_prevented: false,
                     href: None,
+                    navigation_href: None,
+                    submit_prevented: None,
                 };
             }
             Err(panic_val) => {
@@ -182,6 +199,8 @@ fn execute_interaction_thread(
                     html: None,
                     click_prevented: false,
                     href: None,
+                    navigation_href: None,
+                    submit_prevented: None,
                 };
             }
         }
@@ -203,6 +222,8 @@ fn execute_interaction_thread(
         html: guard.html.clone(),
         click_prevented: guard.click_prevented,
         href: guard.href.clone(),
+        navigation_href: guard.navigation_href.clone(),
+        submit_prevented: guard.submit_prevented,
     };
     Some(ret)
 }
@@ -238,6 +259,7 @@ fn create_interaction_runtime(
 /// Dispatches a click event on the element found by `selector`.
 /// If the element is a link (`<a href>`), resolves the href and performs
 /// an HTTP GET unless the click handler prevented default.
+/// If a handler sets `window.location.href`, detects and follows that.
 /// Otherwise returns the modified DOM as a new Page.
 pub async fn js_click(
     app: &Arc<crate::App>,
@@ -311,7 +333,20 @@ pub async fn js_click(
                 }
             };
 
-            // If a link was clicked and default wasn't prevented, navigate
+            // Check if a JS handler set window.location.href (via Proxy in bootstrap.js)
+            if let Some(nav_href) = &result.navigation_href {
+                if !result.click_prevented && !nav_href.starts_with('#') {
+                    let resolved = Url::parse(base_url)
+                        .and_then(|base| base.join(nav_href))
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|_| nav_href.clone());
+
+                    let new_page = crate::Page::from_url(app, &resolved).await?;
+                    return Ok(InteractionResult::Navigated(new_page));
+                }
+            }
+
+            // If a link was clicked and default wasn't prevented, navigate via HTTP
             if let Some(href) = &result.href {
                 if !result.click_prevented && !href.starts_with('#') {
                     let resolved = Url::parse(base_url)
@@ -337,7 +372,8 @@ pub async fn js_click(
 
 /// Perform a JS-level type into a form field.
 ///
-/// Sets the value attribute on the element, dispatches input and change events.
+/// Sets the value attribute on the element, dispatches input and change events,
+/// and returns the modified DOM as a new Page so the caller can track DOM changes.
 pub async fn js_type(
     page: &crate::Page,
     selector: &str,
@@ -395,21 +431,137 @@ pub async fn js_type(
 
     match thread_result {
         Some(result) => {
-            if result.html.is_some() {
-                Ok(InteractionResult::Typed {
-                    selector: selector.to_string(),
-                    value: value.to_string(),
-                })
-            } else {
-                Ok(InteractionResult::ElementNotFound {
+            match result.html {
+                Some(modified_html) => {
+                    // Return the modified DOM so the caller can update page state
+                    let new_page = crate::Page::from_html(&modified_html, &page.url);
+                    Ok(InteractionResult::Navigated(new_page))
+                }
+                None => Ok(InteractionResult::ElementNotFound {
                     selector: selector.to_string(),
                     reason: "JS execution failed".to_string(),
-                })
+                }),
             }
         }
         None => Ok(InteractionResult::ElementNotFound {
             selector: selector.to_string(),
             reason: "JS interaction timed out".to_string(),
+        }),
+    }
+}
+
+/// Perform a JS-level form submission.
+///
+/// Sets form field values from FormState, dispatches a submit event on the form.
+/// If the handler calls `preventDefault`, returns the modified DOM without HTTP submission.
+/// Otherwise falls through to HTTP-level form submission.
+pub async fn js_submit(
+    app: &Arc<crate::App>,
+    page: &crate::Page,
+    form_selector: &str,
+    state: &FormState,
+) -> anyhow::Result<InteractionResult> {
+    let html = page.html.html();
+    let base_url = &page.base_url;
+
+    // Verify form exists
+    if let Ok(sel) = Selector::parse(form_selector) {
+        let doc = Html::parse_document(&html);
+        if doc.select(&sel).next().is_none() {
+            return Ok(InteractionResult::ElementNotFound {
+                selector: form_selector.to_string(),
+                reason: "no form matches selector".to_string(),
+            });
+        }
+    }
+
+    let selector_json =
+        serde_json::to_string(form_selector).unwrap_or_else(|_| format!("'{}'", form_selector));
+
+    // Build JS that sets form field values and dispatches submit event
+    let mut field_setters = String::new();
+    for (name, value) in state.entries() {
+        let name_json = serde_json::to_string(name).unwrap_or_else(|_| format!("'{}'", name));
+        let value_json = serde_json::to_string(value).unwrap_or_else(|_| format!("'{}'", value));
+        field_setters.push_str(&format!(
+            r#"
+            var input = form.querySelector('[name=' + {name_json} + ']');
+            if (input) input.setAttribute('value', {value_json});
+"#,
+            name_json = name_json,
+            value_json = value_json,
+        ));
+    }
+
+    let interaction_js = format!(
+        r#"
+        (function() {{
+            var form = document.querySelector({selector_json});
+            if (!form) return;
+
+            // Set form field values from state
+            {field_setters}
+
+            // Dispatch submit event
+            var event = new Event('submit', {{ bubbles: true, cancelable: true }});
+            var notPrevented = form.dispatchEvent(event);
+
+            var docEl = document.documentElement;
+            if (docEl) {{
+                docEl.setAttribute('data-pardus-submit-prevented', String(!notPrevented));
+            }}
+        }})();
+    "#,
+        selector_json = selector_json,
+        field_setters = field_setters,
+    );
+
+    let thread_result = execute_interaction_thread(
+        html,
+        base_url.clone(),
+        interaction_js,
+        INTERACTION_TIMEOUT_MS,
+        app.config.effective_user_agent().to_string(),
+        None,
+    );
+
+    match thread_result {
+        Some(result) => {
+            let modified_html = match result.html {
+                Some(h) => h,
+                None => {
+                    return Ok(InteractionResult::ElementNotFound {
+                        selector: form_selector.to_string(),
+                        reason: "JS execution failed".to_string(),
+                    })
+                }
+            };
+
+            // If handler prevented default, return modified DOM without HTTP submit
+            if result.submit_prevented == Some(true) {
+                let new_page = crate::Page::from_html(&modified_html, &page.url);
+                return Ok(InteractionResult::Navigated(new_page));
+            }
+
+            // Check if handler navigated via window.location
+            if let Some(nav_href) = &result.navigation_href {
+                if !nav_href.starts_with('#') {
+                    let resolved = Url::parse(base_url)
+                        .and_then(|base| base.join(nav_href))
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|_| nav_href.clone());
+
+                    let new_page = crate::Page::from_url(app, &resolved).await?;
+                    return Ok(InteractionResult::Navigated(new_page));
+                }
+            }
+
+            // Not prevented — fall through to HTTP-level form submission
+            crate::interact::form::submit_form(app, page, form_selector, state).await
+        }
+        None => Ok(InteractionResult::ElementNotFound {
+            selector: form_selector.to_string(),
+            reason: "JS submit interaction timed out".to_string(),
         }),
     }
 }
@@ -832,6 +984,70 @@ mod tests {
             "Expected 'btn2' from last click, got: {}",
             output
         );
+    }
+
+    // ==================== Navigation Detection Tests ====================
+
+    #[test]
+    fn test_window_location_href_detection() {
+        let html = test_page_html(r#"<button id="btn" onclick="window.location.href='/new-page'">Go</button>"#);
+
+        let interaction_js = r#"
+            var btn = document.querySelector('#btn');
+            if (btn) btn.click();
+        "#;
+
+        let result = execute_interaction_thread(
+            html,
+            "https://example.com".to_string(),
+            interaction_js.to_string(),
+            5000,
+            "TestBot/1.0".to_string(),
+            None,
+        );
+
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(
+            r.navigation_href.as_deref(),
+            Some("/new-page"),
+            "Expected navigation_href to be detected from window.location.href setter"
+        );
+    }
+
+    // ==================== Submit Tests ====================
+
+    #[test]
+    fn test_js_submit_prevented() {
+        let html = test_page_html(
+            r#"<form id="myform" onsubmit="event.preventDefault(); document.getElementById('log').textContent='prevented'"><input name="q" value="" /><button type="submit">Go</button></form><span id="log">waiting</span>"#
+        );
+
+        let interaction_js = r#"
+            var form = document.querySelector('#myform');
+            if (form) {
+                var event = new Event('submit', { bubbles: true, cancelable: true });
+                var notPrevented = form.dispatchEvent(event);
+                var docEl = document.documentElement;
+                if (docEl) {
+                    docEl.setAttribute('data-pardus-submit-prevented', String(!notPrevented));
+                }
+            }
+        "#;
+
+        let result = execute_interaction_thread(
+            html,
+            "https://example.com".to_string(),
+            interaction_js.to_string(),
+            5000,
+            "TestBot/1.0".to_string(),
+            None,
+        );
+
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.submit_prevented, Some(true), "Submit should be prevented");
+        assert!(r.html.unwrap().contains("prevented"), "Handler should have modified DOM");
     }
 
     // ==================== No-op / Edge Case Tests ====================

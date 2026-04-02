@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::domain::{method_not_found, CdpDomainHandler, DomainContext, HandleResult, TargetEntry};
 use crate::error::{CdpError, CdpErrorBody};
-use crate::protocol::message::CdpErrorResponse;
+use crate::protocol::message::{CdpErrorResponse, CdpEvent};
 use crate::protocol::target::CdpSession;
 
 pub struct TargetDomain;
@@ -41,6 +41,22 @@ impl CdpDomainHandler for TargetDomain {
                     title: None,
                     js_enabled: false,
                 });
+
+                let _ = ctx.event_bus.send(CdpEvent {
+                    method: "Target.targetCreated".to_string(),
+                    params: serde_json::json!({
+                        "targetInfo": {
+                            "targetId": target_id,
+                            "type": "page",
+                            "title": "",
+                            "url": url,
+                            "attached": false,
+                            "browserContextId": "default",
+                        }
+                    }),
+                    session_id: None,
+                });
+
                 HandleResult::Success(serde_json::json!({ "targetId": target_id }))
             }
             "attachToTarget" => {
@@ -49,9 +65,33 @@ impl CdpDomainHandler for TargetDomain {
                     return invalid_params("Missing targetId parameter");
                 }
                 session.target_id = Some(target_id.to_string());
+
+                let _ = ctx.event_bus.send(CdpEvent {
+                    method: "Target.attachedToTarget".to_string(),
+                    params: serde_json::json!({
+                        "sessionId": session.session_id,
+                        "targetInfo": {
+                            "targetId": target_id,
+                            "type": "page",
+                            "title": "",
+                            "attached": true,
+                            "browserContextId": "default",
+                        }
+                    }),
+                    session_id: Some(session.session_id.clone()),
+                });
+
                 HandleResult::Success(serde_json::json!({ "sessionId": session.session_id }))
             }
             "detachFromTarget" => {
+                let _ = ctx.event_bus.send(CdpEvent {
+                    method: "Target.detachedFromTarget".to_string(),
+                    params: serde_json::json!({
+                        "sessionId": session.session_id,
+                    }),
+                    session_id: Some(session.session_id.clone()),
+                });
+
                 session.target_id = None;
                 HandleResult::Ack
             }
@@ -83,6 +123,23 @@ impl CdpDomainHandler for TargetDomain {
                 HandleResult::Success(serde_json::json!({ "browserContextId": "default" }))
             }
             "disposeBrowserContext" => HandleResult::Ack,
+            "closeTarget" => {
+                let target_id = params["targetId"].as_str().unwrap_or("");
+                if !target_id.is_empty() {
+                    let mut targets = ctx.targets.lock().await;
+                    if targets.remove(target_id).is_some() {
+                        let _ = ctx.event_bus.send(CdpEvent {
+                            method: "Target.targetDestroyed".to_string(),
+                            params: serde_json::json!({
+                                "targetId": target_id,
+                            }),
+                            session_id: None,
+                        });
+                        return HandleResult::Success(serde_json::json!({ "success": true }));
+                    }
+                }
+                HandleResult::Success(serde_json::json!({ "success": false }))
+            }
             _ => method_not_found("Target", method),
         }
     }

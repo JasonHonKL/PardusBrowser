@@ -10,6 +10,8 @@ use crate::protocol::message::{CdpErrorResponse, CdpRequest};
 use crate::protocol::router::CdpRouter;
 use crate::protocol::target::CdpSession;
 
+const DEFAULT_COMMAND_TIMEOUT_SECS: u64 = 30;
+
 pub async fn handle_websocket(
     ws_stream: WebSocketStream<TcpStream>,
     router: Arc<CdpRouter>,
@@ -23,10 +25,14 @@ pub async fn handle_websocket(
         uuid::Uuid::new_v4().to_string(),
     )));
 
+    let mut inactivity_timer = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs));
+    tokio::pin!(inactivity_timer);
+
     loop {
         tokio::select! {
-            // Incoming CDP commands
             msg = ws_receiver.next() => {
+                inactivity_timer.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(timeout_secs));
+
                 match msg {
                     Some(Ok(tungstenite::Message::Text(text))) => {
                         handle_text_message(&text, &router, &ctx, &session, &mut ws_sender).await;
@@ -39,7 +45,6 @@ pub async fn handle_websocket(
                         break;
                     }
                     Some(Ok(tungstenite::Message::Binary(data))) => {
-                        // Try to parse as UTF-8 text.
                         if let Ok(text) = String::from_utf8(data.to_vec()) {
                             handle_text_message(&text, &router, &ctx, &session, &mut ws_sender).await;
                         }
@@ -51,16 +56,13 @@ pub async fn handle_websocket(
                     _ => {}
                 }
             }
-            // Outgoing CDP events
             event = event_rx.recv() => {
                 match event {
                     Ok(event) => {
                         let session = session.lock().await;
-                        // Only send events for enabled domains.
                         let domain = event.method.split('.').next().unwrap_or("");
                         if session.is_domain_enabled(domain) || domain == "Target" {
                             let json = serde_json::to_string(&event).unwrap_or_default();
-                            let _session_id = session.session_id.clone();
                             drop(session);
                             let msg = tungstenite::Message::Text(json.into());
                             if ws_sender.send(msg).await.is_err() {
@@ -74,9 +76,8 @@ pub async fn handle_websocket(
                     Err(_) => break,
                 }
             }
-            // Inactivity timeout
-            _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => {
-                tracing::info!("WebSocket connection timed out");
+            _ = &mut inactivity_timer => {
+                tracing::info!("WebSocket connection timed out after {}s of inactivity", timeout_secs);
                 break;
             }
         }
@@ -110,14 +111,34 @@ async fn handle_text_message(
         }
     };
 
-    let mut session = session.lock().await;
-    match router.route(request, &mut session, ctx).await {
-        Ok(response) => {
+    let request_id = request.id;
+
+    let mut session_guard = session.lock().await;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(DEFAULT_COMMAND_TIMEOUT_SECS),
+        router.route(request, &mut session_guard, ctx)
+    ).await;
+    drop(session_guard);
+
+    match result {
+        Ok(Ok(response)) => {
             let json = serde_json::to_string(&response).unwrap_or_default();
             let _ = ws_sender.send(tungstenite::Message::Text(json.into())).await;
         }
-        Err(error) => {
+        Ok(Err(error)) => {
             let json = serde_json::to_string(&error).unwrap_or_default();
+            let _ = ws_sender.send(tungstenite::Message::Text(json.into())).await;
+        }
+        Err(_) => {
+            let err = CdpErrorResponse {
+                id: request_id,
+                error: crate::error::CdpErrorBody {
+                    code: crate::error::SERVER_ERROR,
+                    message: format!("Command timed out after {}s", DEFAULT_COMMAND_TIMEOUT_SECS),
+                },
+                session_id: None,
+            };
+            let json = serde_json::to_string(&err).unwrap_or_default();
             let _ = ws_sender.send(tungstenite::Message::Text(json.into())).await;
         }
     }

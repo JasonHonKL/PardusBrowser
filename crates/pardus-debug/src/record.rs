@@ -58,6 +58,9 @@ pub struct NetworkRecord {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_cache: Option<bool>,
 }
 
 impl NetworkRecord {
@@ -85,6 +88,7 @@ impl NetworkRecord {
             request_headers: Vec::new(),
             response_headers: Vec::new(),
             error: None,
+            from_cache: None,
         }
     }
 
@@ -111,6 +115,7 @@ impl NetworkRecord {
             request_headers: Vec::new(),
             response_headers: Vec::new(),
             error: None,
+            from_cache: None,
         }
     }
 }

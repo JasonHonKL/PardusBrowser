@@ -16,3 +16,4 @@ async-trait = "0.1"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { workspace = true }
 anyhow = { workspace = true }
+url = "2"

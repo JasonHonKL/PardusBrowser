@@ -23,6 +23,8 @@ pub enum TabManagerError {
     TabBusy,
     #[error("Tab in error state: {0}")]
     TabError(String),
+    #[error("Memory limit exceeded for tab {0}: using {1}MB of {2}MB limit")]
+    MemoryLimitExceeded(TabId, usize, usize),
 }
 
 /// Manages multiple browser tabs with shared App resources
@@ -77,6 +79,20 @@ impl TabManager {
         id
     }
 
+    /// Create a new tab with a memory limit
+    ///
+    /// Convenience method that creates a tab with the specified memory limit in MB.
+    /// A limit of 0 means unlimited.
+    pub fn create_tab_with_memory_limit(
+        &mut self,
+        url: impl Into<String>,
+        memory_limit_mb: usize,
+    ) -> TabId {
+        let mut config = TabConfig::default();
+        config.memory_limit_mb = memory_limit_mb;
+        self.create_tab_with_config(url, config)
+    }
+
     /// Create a new tab with custom configuration
     pub fn create_tab_with_config(
         &mut self,
@@ -108,6 +124,45 @@ impl TabManager {
     /// Get a mutable reference to a tab by ID
     pub fn get_mut(&mut self, id: TabId) -> Option<&mut Tab> {
         self.tabs.get_mut(&id)
+    }
+
+    /// Check if a tab has exceeded its memory limit
+    pub fn check_memory_limit(&self, id: TabId) -> Result<bool, TabManagerError> {
+        let tab = self.tabs.get(&id).ok_or(TabManagerError::TabNotFound(id))?;
+        Ok(tab.is_memory_limit_exceeded())
+    }
+
+    /// Get memory usage for a tab in MB
+    pub fn get_memory_usage_mb(&self, id: TabId) -> Result<usize, TabManagerError> {
+        let tab = self.tabs.get(&id).ok_or(TabManagerError::TabNotFound(id))?;
+        Ok(tab.memory_usage_mb())
+    }
+
+    /// Get total memory usage across all tabs
+    pub fn total_memory_usage_mb(&self) -> usize {
+        self.tabs.values().map(|t| t.memory_usage_mb()).sum()
+    }
+
+    /// Get the number of tabs that have exceeded their memory limits
+    pub fn tabs_exceeding_memory_limit(&self) -> Vec<TabId> {
+        self.tabs
+            .values()
+            .filter(|t| t.is_memory_limit_exceeded())
+            .map(|t| t.id)
+            .collect()
+    }
+
+    /// Free memory for tabs that have exceeded their limit
+    /// Returns the number of tabs that were freed
+    pub fn free_excess_memory(&mut self) -> usize {
+        let exceeded: Vec<TabId> = self.tabs_exceeding_memory_limit();
+        let count = exceeded.len();
+        for id in exceeded {
+            if let Some(tab) = self.tabs.get_mut(&id) {
+                tab.free_memory();
+            }
+        }
+        count
     }
 
     /// Switch to a different tab (activate it and load if needed)
