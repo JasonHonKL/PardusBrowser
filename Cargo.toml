@@ -35,10 +35,6 @@ dashmap = "6"
 h2 = "0.4"
 bytes = "1"
 
-[patch.crates-io]
-temporal_rs = { path = "patches/temporal" }
-timezone_provider = { path = "patches/temporal/provider" }
-
 [profile.release]
 opt-level = "z"
 lto = true
