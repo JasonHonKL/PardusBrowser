@@ -120,6 +120,9 @@ class Element {
     const self = this;
     return {
       add() {}, remove() {}, toggle() { return false; }, contains(c) { return self.className.split(" ").includes(c); },
+      replace() { return false; }, item(i) { return null; }, forEach() {}, toString() { return self.className; },
+      values() { return [].values(); }, keys() { return [].keys(); }, entries() { return [].entries(); },
+      [Symbol.iterator]() { return [][Symbol.iterator](); },
       get length() { return self.className.split(" ").filter(Boolean).length; },
     };
   }

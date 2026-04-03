@@ -335,8 +335,40 @@ class Element {
       contains(token) {
         return self.className.split(/\s+/).includes(token);
       },
+      replace(oldToken, newToken) {
+        const current = self.className.split(/\s+/).filter(s => s);
+        const idx = current.indexOf(oldToken);
+        if (idx < 0) return false;
+        current[idx] = newToken;
+        self.className = current.join(' ');
+        return true;
+      },
+      item(index) {
+        const current = self.className.split(/\s+/).filter(s => s);
+        return current[index] || null;
+      },
+      forEach(callback, thisArg) {
+        const current = self.className.split(/\s+/).filter(s => s);
+        current.forEach(callback, thisArg);
+      },
+      toString() {
+        return self.className;
+      },
       get length() {
         return self.className.split(/\s+/).filter(s => s).length;
+      },
+      [Symbol.iterator]() {
+        const current = self.className.split(/\s+/).filter(s => s);
+        return current[Symbol.iterator]();
+      },
+      values() {
+        return self.className.split(/\s+/).filter(s => s).values();
+      },
+      keys() {
+        return self.className.split(/\s+/).filter(s => s).keys();
+      },
+      entries() {
+        return self.className.split(/\s+/).filter(s => s).entries();
       }
     };
   }
