@@ -1,0 +1,179 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import { browserTools, BrowserToolName } from '../../tools/definitions.js';
+
+describe('Tool Definitions', () => {
+  describe('browserTools', () => {
+    it('should have 16 tools', () => {
+      assert.strictEqual(browserTools.length, 16);
+    });
+
+    it('should include all expected tools', () => {
+      const toolNames = browserTools.map(t => t.function.name);
+      const expectedTools = [
+        'browser_new',
+        'browser_navigate',
+        'browser_click',
+        'browser_fill',
+        'browser_submit',
+        'browser_scroll',
+        'browser_get_cookies',
+        'browser_set_cookie',
+        'browser_delete_cookie',
+        'browser_get_storage',
+        'browser_set_storage',
+        'browser_delete_storage',
+        'browser_clear_storage',
+        'browser_get_state',
+        'browser_list',
+        'browser_close',
+      ];
+
+      for (const expected of expectedTools) {
+        assert.ok(toolNames.includes(expected), `Missing tool: ${expected}`);
+      }
+    });
+  });
+
+  describe('browser_new', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_new')!;
+
+    it('should have correct structure', () => {
+      assert.strictEqual(tool.type, 'function');
+      assert.strictEqual(tool.function.name, 'browser_new');
+      assert.ok(tool.function.description);
+    });
+
+    it('should have optional instance_id parameter', () => {
+      const params = tool.function.parameters;
+      assert.ok('instance_id' in params.properties);
+      const required = tool.function.parameters.required || [];
+      assert.ok(!required.includes('instance_id'));
+    });
+
+    it('should have optional proxy parameter', () => {
+      const params = tool.function.parameters;
+      assert.ok('proxy' in params.properties);
+    });
+
+    it('should have optional timeout parameter', () => {
+      const params = tool.function.parameters;
+      assert.ok('timeout' in params.properties);
+    });
+  });
+
+  describe('browser_navigate', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_navigate')!;
+
+    it('should require instance_id and url', () => {
+      const required = tool.function.parameters.required || [];
+      assert.ok(required.includes('instance_id'));
+      assert.ok(required.includes('url'));
+    });
+
+    it('should have optional wait_ms parameter', () => {
+      const params = tool.function.parameters;
+      assert.ok('wait_ms' in params.properties);
+    });
+
+    it('should have optional interactive_only parameter', () => {
+      const params = tool.function.parameters;
+      assert.ok('interactive_only' in params.properties);
+    });
+
+    it('should have optional headers parameter', () => {
+      const params = tool.function.parameters;
+      assert.ok('headers' in params.properties);
+    });
+  });
+
+  describe('browser_click', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_click')!;
+
+    it('should require instance_id and element_id', () => {
+      const required = tool.function.parameters.required || [];
+      assert.ok(required.includes('instance_id'));
+      assert.ok(required.includes('element_id'));
+    });
+  });
+
+  describe('browser_fill', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_fill')!;
+
+    it('should require instance_id, element_id, and value', () => {
+      const required = tool.function.parameters.required || [];
+      assert.ok(required.includes('instance_id'));
+      assert.ok(required.includes('element_id'));
+      assert.ok(required.includes('value'));
+    });
+  });
+
+  describe('browser_submit', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_submit')!;
+
+    it('should require only instance_id', () => {
+      const required = tool.function.parameters.required || [];
+      assert.ok(required.includes('instance_id'));
+      assert.ok(!required.includes('form_element_id'));
+    });
+
+    it('should have optional form_element_id', () => {
+      const params = tool.function.parameters;
+      assert.ok('form_element_id' in params.properties);
+    });
+  });
+
+  describe('browser_scroll', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_scroll')!;
+
+    it('should have direction enum', () => {
+      const params = tool.function.parameters;
+      const directionProp = params.properties.direction as { enum: string[] };
+      assert.deepStrictEqual(directionProp.enum, ['up', 'down', 'top', 'bottom']);
+    });
+  });
+
+  describe('browser_list', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_list')!;
+
+    it('should have no parameters', () => {
+      assert.deepStrictEqual(tool.function.parameters.properties, {});
+      const required = tool.function.parameters.required || [];
+      assert.deepStrictEqual(required, []);
+    });
+  });
+
+  describe('browser_get_state', () => {
+    const tool = browserTools.find(t => t.function.name === 'browser_get_state')!;
+
+    it('should require instance_id', () => {
+      const required = tool.function.parameters.required || [];
+      assert.ok(required.includes('instance_id'));
+    });
+  });
+
+  describe('BrowserToolName', () => {
+    it('should be a union of all tool names', () => {
+      const toolNames: BrowserToolName[] = [
+        'browser_new',
+        'browser_navigate',
+        'browser_click',
+        'browser_fill',
+        'browser_submit',
+        'browser_scroll',
+        'browser_get_cookies',
+        'browser_set_cookie',
+        'browser_delete_cookie',
+        'browser_get_storage',
+        'browser_set_storage',
+        'browser_delete_storage',
+        'browser_clear_storage',
+        'browser_get_state',
+        'browser_list',
+        'browser_close',
+      ];
+
+      assert.strictEqual(toolNames.length, 16);
+    });
+  });
+});

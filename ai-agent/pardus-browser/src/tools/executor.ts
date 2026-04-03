@@ -1,0 +1,957 @@
+import { BrowserManager, BrowserInstance } from '../core/index.js';
+import { ToolResult } from '../core/types.js';
+import { BrowserToolName } from './definitions.js';
+import {
+  ToolExecutionConfig,
+  ToolExecutionResult,
+  ParallelExecutionResult,
+  groupToolsForParallelExecution,
+} from './types.js';
+
+interface ToolCallArgs {
+  instance_id?: string;
+  url?: string;
+  element_id?: string;
+  form_element_id?: string;
+  value?: string;
+  direction?: 'up' | 'down' | 'top' | 'bottom';
+  wait_ms?: number;
+  interactive_only?: boolean;
+  headers?: Record<string, string>;
+  proxy?: string;
+  timeout?: number;
+  // Cookie args
+  name?: string;
+  domain?: string;
+  path?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: 'Strict' | 'Lax' | 'None';
+  // Storage args
+  storage_type?: 'localStorage' | 'sessionStorage' | 'both';
+  key?: string;
+}
+
+/**
+ * Default retry configuration
+ */
+const DEFAULT_RETRY_CONFIG: Required<ToolExecutionConfig> = {
+  timeout: 30000,
+  retries: 0,
+  retryDelay: 1000,
+  maxRetryDelay: 30000,
+  retryBackoff: 2,
+  retryableErrors: ['TimeoutError', 'NetworkError', 'ConnectionError'],
+};
+
+export class ToolExecutor {
+  constructor(private browserManager: BrowserManager) {}
+
+  /**
+   * Execute a single browser tool call with retry logic and timeout
+   */
+  async executeTool(
+    name: BrowserToolName,
+    args: Record<string, unknown>,
+    config?: ToolExecutionConfig
+  ): Promise<ToolResult> {
+    const startTime = Date.now();
+    const mergedConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+    
+    let lastError: Error | undefined;
+    
+    for (let attempt = 1; attempt <= mergedConfig.retries + 1; attempt++) {
+      try {
+        const result = await this.executeToolWithTimeout(
+          name,
+          args as ToolCallArgs,
+          mergedConfig.timeout
+        );
+        
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        const isRetryable = mergedConfig.retryableErrors.some(
+          errPattern => lastError!.message.includes(errPattern) || 
+                      lastError!.constructor.name.includes(errPattern)
+        );
+        
+        if (attempt >= mergedConfig.retries + 1 || !isRetryable) {
+          break;
+        }
+        
+        const delay = Math.min(
+          mergedConfig.retryDelay * Math.pow(mergedConfig.retryBackoff, attempt - 1),
+          mergedConfig.maxRetryDelay
+        );
+        
+        console.log(`[Retry] ${name} attempt ${attempt + 1}/${mergedConfig.retries + 1} after ${delay}ms`);
+        await this.sleep(delay);
+      }
+    }
+    
+    return {
+      success: false,
+      content: '',
+      error: lastError?.message || 'Tool execution failed',
+    };
+  }
+
+  /**
+   * Execute tool with timeout
+   */
+  private async executeToolWithTimeout(
+    name: BrowserToolName,
+    args: ToolCallArgs,
+    timeout: number
+  ): Promise<ToolResult> {
+    return Promise.race([
+      this.executeToolInternal(name, args),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`TimeoutError: Tool ${name} timed out after ${timeout}ms`)),
+          timeout
+        )
+      ),
+    ]);
+  }
+
+  /**
+   * Execute multiple tool calls with parallel execution where safe
+   */
+  async executeTools(
+    tools: Array<{
+      name: BrowserToolName;
+      args: Record<string, unknown>;
+      config?: ToolExecutionConfig;
+    }>,
+    options?: {
+      parallel?: boolean;
+      continueOnError?: boolean;
+    }
+  ): Promise<ParallelExecutionResult> {
+    const results: ToolExecutionResult[] = [];
+
+    if (!options?.parallel) {
+      for (const tool of tools) {
+        const result = await this.executeToolWithTracking(
+          tool.name,
+          tool.args,
+          tool.config
+        );
+        results.push(result);
+
+        if (!result.success && !options?.continueOnError) {
+          break;
+        }
+      }
+    } else {
+      const groups = groupToolsForParallelExecution(tools);
+
+      for (const group of groups) {
+        const groupResults = await Promise.all(
+          group.tools.map(tool =>
+            this.executeToolWithTracking(
+              tool.name as BrowserToolName,
+              tool.args,
+              tool.config
+            )
+          )
+        );
+
+        results.push(...groupResults);
+
+        const hasFailure = groupResults.some(r => !r.success);
+        if (hasFailure) {
+          if (group.failureStrategy === 'abort') {
+            break;
+          } else if (group.failureStrategy === 'retry-all') {
+            const retryResults = await Promise.all(
+              group.tools.map(tool =>
+                this.executeToolWithTracking(
+                  tool.name as BrowserToolName,
+                  tool.args,
+                  { ...tool.config, retries: (tool.config?.retries ?? 0) + 1 }
+                )
+              )
+            );
+            results.splice(results.length - groupResults.length, groupResults.length, ...retryResults);
+          }
+        }
+      }
+    }
+
+    const succeeded = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+
+    return {
+      results,
+      allSucceeded: failed.length === 0,
+      anySucceeded: succeeded.length > 0,
+      failedCount: failed.length,
+      succeededCount: succeeded.length,
+    };
+  }
+
+  /**
+   * Execute a single tool and track execution details
+   */
+  private async executeToolWithTracking(
+    name: BrowserToolName,
+    args: Record<string, unknown>,
+    config?: ToolExecutionConfig
+  ): Promise<ToolExecutionResult> {
+    const startTime = Date.now();
+    const mergedConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+    
+    let lastError: string | undefined;
+    let lastContent: string | undefined;
+    let attempts = 0;
+    
+    for (let attempt = 1; attempt <= mergedConfig.retries + 1; attempt++) {
+      attempts = attempt;
+      try {
+        const result = await this.executeToolWithTimeout(
+          name,
+          args as ToolCallArgs,
+          mergedConfig.timeout
+        );
+        
+        return {
+          name,
+          args,
+          success: result.success,
+          content: result.content,
+          error: result.error,
+          durationMs: Date.now() - startTime,
+          attempts,
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        lastContent = '';
+        
+        const isRetryable = mergedConfig.retryableErrors.some(
+          errPattern => lastError!.includes(errPattern)
+        );
+        
+        if (attempt >= mergedConfig.retries + 1 || !isRetryable) {
+          break;
+        }
+        
+        const delay = Math.min(
+          mergedConfig.retryDelay * Math.pow(mergedConfig.retryBackoff, attempt - 1),
+          mergedConfig.maxRetryDelay
+        );
+        
+        await this.sleep(delay);
+      }
+    }
+    
+    return {
+      name,
+      args,
+      success: false,
+      content: lastContent,
+      error: lastError,
+      durationMs: Date.now() - startTime,
+      attempts,
+    };
+  }
+
+  /**
+   * Internal tool execution without timeout/retry logic
+   */
+  private async executeToolInternal(
+    name: BrowserToolName,
+    args: ToolCallArgs
+  ): Promise<ToolResult> {
+    const typedArgs = args;
+
+    switch (name) {
+      case 'browser_new':
+        return this.handleNew(typedArgs);
+      case 'browser_navigate':
+        return this.handleNavigate(typedArgs);
+      case 'browser_click':
+        return this.handleClick(typedArgs);
+      case 'browser_fill':
+        return this.handleFill(typedArgs);
+      case 'browser_submit':
+        return this.handleSubmit(typedArgs);
+      case 'browser_scroll':
+        return this.handleScroll(typedArgs);
+      case 'browser_get_cookies':
+        return this.handleGetCookies(typedArgs);
+      case 'browser_set_cookie':
+        return this.handleSetCookie(typedArgs);
+      case 'browser_delete_cookie':
+        return this.handleDeleteCookie(typedArgs);
+      case 'browser_get_storage':
+        return this.handleGetStorage(typedArgs);
+      case 'browser_set_storage':
+        return this.handleSetStorage(typedArgs);
+      case 'browser_delete_storage':
+        return this.handleDeleteStorage(typedArgs);
+      case 'browser_clear_storage':
+        return this.handleClearStorage(typedArgs);
+      case 'browser_close':
+        return this.handleClose(typedArgs);
+      case 'browser_list':
+        return this.handleList();
+      case 'browser_get_state':
+        return this.handleGetState(typedArgs);
+      default:
+        return {
+          success: false,
+          content: '',
+          error: `Unknown tool: ${name}`,
+        };
+    }
+  }
+
+  private async handleNew(args: ToolCallArgs): Promise<ToolResult> {
+    try {
+      const instance = await this.browserManager.createInstance({
+        id: args.instance_id,
+        proxy: args.proxy,
+        timeout: args.timeout,
+      });
+
+      return {
+        success: true,
+        content: `Browser instance created: ${instance.id}\nPort: ${instance.port}\nStatus: connected`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleNavigate(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.url) {
+      return { success: false, content: '', error: 'Missing url' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.navigate(args.url, {
+        waitMs: args.wait_ms,
+        interactiveOnly: args.interactive_only,
+        headers: args.headers,
+      });
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Navigation failed',
+        };
+      }
+
+      const content = `## Navigation Result\n\n` +
+        `- **URL**: ${result.url}\n` +
+        `- **Title**: ${result.title || 'N/A'}\n` +
+        `- **Stats**: ${result.stats.landmarks} landmarks, ${result.stats.links} links, ${result.stats.headings} headings, ${result.stats.actions} actions, ${result.stats.forms} forms\n\n` +
+        `---\n\n` +
+        `## Page Content\n\n` +
+        result.markdown;
+
+      return { success: true, content };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleClick(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.element_id) {
+      return { success: false, content: '', error: 'Missing element_id' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.click(args.element_id);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Click failed',
+        };
+      }
+
+      let content = `## Click Result\n\n` +
+        `- **Element**: ${args.element_id}\n` +
+        `- **Navigated**: ${result.navigated ? 'Yes' : 'No'}\n`;
+
+      if (result.navigated && result.url) {
+        content += `- **New URL**: ${result.url}\n`;
+      }
+
+      if (result.markdown) {
+        content += `\n---\n\n## Page Content\n\n${result.markdown}`;
+      }
+
+      return { success: true, content };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleFill(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.element_id) {
+      return { success: false, content: '', error: 'Missing element_id' };
+    }
+    if (args.value === undefined) {
+      return { success: false, content: '', error: 'Missing value' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.fill(args.element_id, args.value);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Fill failed',
+        };
+      }
+
+      return {
+        success: true,
+        content: `Filled ${args.element_id} with: ${args.value}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleSubmit(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.submit(args.form_element_id);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Submit failed',
+        };
+      }
+
+      let content = `## Submit Result\n\n` +
+        `- **Navigated**: ${result.navigated ? 'Yes' : 'No'}\n`;
+
+      if (result.navigated && result.url) {
+        content += `- **New URL**: ${result.url}\n`;
+      }
+
+      if (result.markdown) {
+        content += `\n---\n\n## Page Content\n\n${result.markdown}`;
+      }
+
+      return { success: true, content };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleScroll(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.direction) {
+      return { success: false, content: '', error: 'Missing direction' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.scroll(args.direction);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Scroll failed',
+        };
+      }
+
+      return {
+        success: true,
+        content: `Scrolled ${args.direction}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // Cookie handlers
+  private async handleGetCookies(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.getCookies(args.url);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Failed to get cookies',
+        };
+      }
+
+      const cookieList = result.cookies.map(c => 
+        `- ${c.name}=${c.value.substring(0, 50)}${c.value.length > 50 ? '...' : ''} (domain: ${c.domain}, path: ${c.path})`
+      ).join('\n');
+
+      const content = `## Cookies (${result.cookies.length})\n\n${cookieList || 'No cookies found'}`;
+
+      return { success: true, content };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleSetCookie(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.name) {
+      return { success: false, content: '', error: 'Missing cookie name' };
+    }
+    if (args.value === undefined) {
+      return { success: false, content: '', error: 'Missing cookie value' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.setCookie(args.name, args.value, {
+        url: args.url,
+        domain: args.domain,
+        path: args.path,
+        expires: args.expires,
+        httpOnly: args.httpOnly,
+        secure: args.secure,
+        sameSite: args.sameSite,
+      });
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Failed to set cookie',
+        };
+      }
+
+      return {
+        success: true,
+        content: `Cookie "${args.name}" set successfully`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleDeleteCookie(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.name) {
+      return { success: false, content: '', error: 'Missing cookie name' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.deleteCookie(args.name, args.url);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Failed to delete cookie',
+        };
+      }
+
+      return {
+        success: true,
+        content: `Cookie "${args.name}" deleted successfully`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // Storage handlers
+  private async handleGetStorage(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.storage_type) {
+      return { success: false, content: '', error: 'Missing storage_type' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.getStorage(args.storage_type as 'localStorage' | 'sessionStorage', args.key);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Failed to get storage',
+        };
+      }
+
+      const storageList = result.items.map(item => 
+        `- ${item.key}: ${item.value.substring(0, 100)}${item.value.length > 100 ? '...' : ''}`
+      ).join('\n');
+
+      const content = `## ${args.storage_type} (${result.items.length} items)\n\n${storageList || 'No items found'}`;
+
+      return { success: true, content };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleSetStorage(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.storage_type) {
+      return { success: false, content: '', error: 'Missing storage_type' };
+    }
+    if (!args.key) {
+      return { success: false, content: '', error: 'Missing key' };
+    }
+    if (args.value === undefined) {
+      return { success: false, content: '', error: 'Missing value' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.setStorage(args.storage_type as 'localStorage' | 'sessionStorage', args.key, args.value);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Failed to set storage',
+        };
+      }
+
+      return {
+        success: true,
+        content: `Set ${args.key} in ${args.storage_type}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleDeleteStorage(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.storage_type) {
+      return { success: false, content: '', error: 'Missing storage_type' };
+    }
+    if (!args.key) {
+      return { success: false, content: '', error: 'Missing key' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.deleteStorage(args.storage_type as 'localStorage' | 'sessionStorage', args.key);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Failed to delete storage',
+        };
+      }
+
+      return {
+        success: true,
+        content: `Deleted ${args.key} from ${args.storage_type}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleClearStorage(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+    if (!args.storage_type) {
+      return { success: false, content: '', error: 'Missing storage_type' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const result = await instance.clearStorage(args.storage_type);
+
+      if (!result.success) {
+        return {
+          success: false,
+          content: '',
+          error: result.error || 'Failed to clear storage',
+        };
+      }
+
+      return {
+        success: true,
+        content: `Cleared ${args.storage_type}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async handleClose(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+
+    try {
+      await this.browserManager.closeInstance(args.instance_id);
+      return {
+        success: true,
+        content: `Browser instance "${args.instance_id}" closed`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private handleList(): ToolResult {
+    const instances = this.browserManager.listInstances();
+    
+    if (instances.length === 0) {
+      return {
+        success: true,
+        content: 'No active browser instances.',
+      };
+    }
+
+    const lines = instances.map((inst) => {
+      const status = inst.connected ? 'connected' : 'disconnected';
+      const url = inst.url ? ` - ${inst.url}` : '';
+      return `- **${inst.id}** (${status}, port ${inst.port})${url}`;
+    });
+
+    return {
+      success: true,
+      content: `## Active Browser Instances (${instances.length})\n\n${lines.join('\n')}`,
+    };
+  }
+
+  private async handleGetState(args: ToolCallArgs): Promise<ToolResult> {
+    if (!args.instance_id) {
+      return { success: false, content: '', error: 'Missing instance_id' };
+    }
+
+    const instance = this.browserManager.getInstance(args.instance_id);
+    if (!instance) {
+      return {
+        success: false,
+        content: '',
+        error: `Browser instance "${args.instance_id}" not found`,
+      };
+    }
+
+    try {
+      const state = await instance.getCurrentState();
+      
+      const content = `## Current State\n\n` +
+        `- **URL**: ${state.url}\n` +
+        `- **Title**: ${state.title || 'N/A'}\n\n` +
+        `---\n\n` +
+        `## Page Content\n\n` +
+        state.markdown;
+
+      return { success: true, content };
+    } catch (error) {
+      return {
+        success: false,
+        content: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
