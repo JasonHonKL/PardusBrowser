@@ -14,3 +14,5 @@ adapters/node/pardus-playwright/node_modules/
 adapters/node/pardus-playwright/dist/
 
 .env
+# Research benchmark data
+research/
