@@ -1,5 +1,5 @@
 #!/bin/bash
-# Integration tests for pardus-browser
+# Integration tests for open-browser
 # Usage: ./tests/run_tests.sh [--js]
 
 set -e
@@ -49,7 +49,7 @@ check_output() {
 
 echo ""
 echo "=========================================="
-echo "  pardus-browser integration tests"
+echo "  open-browser integration tests"
 echo "=========================================="
 echo ""
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# pardus-browser test script
+# open-browser test script
 # Usage: ./test.sh [URL]
 # Default URL: https://example.com
 # Note: Requires nightly Rust (cargo +nightly)
@@ -10,7 +10,7 @@ URL="${1:-https://example.com}"
 BIN="cargo +nightly run --"
 
 echo "============================================================"
-echo "  pardus-browser test suite"
+echo "  open-browser test suite"
 echo "============================================================"
 echo ""
 
@@ -25,18 +25,18 @@ echo ""
 
 # --- 1. Core library tests ---
 echo "──────────────────────────────────────────────────────────────"
-echo "  1. pardus-core unit tests (DOM, JS runtime)"
+echo "  1. open-core unit tests (DOM, JS runtime)"
 echo "──────────────────────────────────────────────────────────────"
 echo ""
-cargo +nightly test -p pardus-core --lib 2>&1 | tail -20
+cargo +nightly test -p open-core --lib 2>&1 | tail -20
 echo ""
 
 # --- 2. Debug library tests ---
 echo "──────────────────────────────────────────────────────────────"
-echo "  2. pardus-debug unit tests"
+echo "  2. open-debug unit tests"
 echo "──────────────────────────────────────────────────────────────"
 echo ""
-cargo +nightly test -p pardus-debug --lib 2>&1 | tail -20
+cargo +nightly test -p open-debug --lib 2>&1 | tail -20
 echo ""
 
 # --- 3. All unit tests ---
@@ -58,7 +58,7 @@ echo ""
 
 # --- 4. Default format (md) ---
 echo "──────────────────────────────────────────────────────────────"
-echo "  4. Default format (md)  —  ./pardus-browser navigate $URL"
+echo "  4. Default format (md)  —  ./open-browser navigate $URL"
 echo "──────────────────────────────────────────────────────────────"
 echo ""
 $BIN navigate "$URL"
@@ -281,8 +281,8 @@ echo "============================================================"
 echo ""
 echo "  Summary:"
 echo "    Unit Tests:"
-echo "      - pardus-core: 47 tests (27 DOM + 20 JS runtime)"
-echo "      - pardus-debug: 97 tests"
+echo "      - open-core: 47 tests (27 DOM + 20 JS runtime)"
+echo "      - open-debug: 97 tests"
 echo ""
 echo "    Integration Tests:"
 echo "      - Basic navigation and formats tested"

@@ -5,28 +5,28 @@
 **/.DS_Store
 
 # Adapter build artifacts
-adapters/python/pardus-playwright/*.egg-info/
-adapters/python/pardus-playwright/__pycache__/
-adapters/python/pardus-playwright/build/
-adapters/python/pardus-playwright/dist/
-adapters/node/pardus-puppeteer/node_modules/
-adapters/node/pardus-puppeteer/dist/
-adapters/node/pardus-playwright/node_modules/
-adapters/node/pardus-playwright/dist/
+adapters/python/open-playwright/*.egg-info/
+adapters/python/open-playwright/__pycache__/
+adapters/python/open-playwright/build/
+adapters/python/open-playwright/dist/
+adapters/node/open-puppeteer/node_modules/
+adapters/node/open-puppeteer/dist/
+adapters/node/open-playwright/node_modules/
+adapters/node/open-playwright/dist/
 
 # Tauri frontend
-crates/pardus-tauri/node_modules/
-crates/pardus-tauri/frontend/node_modules/
-crates/pardus-tauri/dist/
-crates/pardus-tauri/frontend/dist/
+crates/open-tauri/node_modules/
+crates/open-tauri/frontend/node_modules/
+crates/open-tauri/dist/
+crates/open-tauri/frontend/dist/
 
 # Web dashboard
 web/node_modules/
 web/dist/
 
 # AI agent
-ai-agent/pardus-browser/node_modules/
-ai-agent/pardus-browser/dist/
+ai-agent/open-browser/node_modules/
+ai-agent/open-browser/dist/
 
 # Lockfiles (committed for reproducibility)
 # If you need to regenerate: rm **/package-lock.json && npm install

@@ -1,11 +1,11 @@
 #!/bin/bash
-# pardus-browser benchmark suite — local reproducible benchmarks
+# open-browser benchmark suite — local reproducible benchmarks
 # Usage: ./bench/run_bench.sh [iterations] [port]
 set -euo pipefail
 
 ITERATIONS="${1:-10}"
 PORT="${2:-18899}"
-BINARY="target/release/pardus-browser"
+BINARY="target/release/open-browser"
 SITE_DIR="$(dirname "$0")/../bench/site"
 RESULTS_DIR="$(dirname "$0")/../bench/results"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -24,7 +24,7 @@ mkdir -p "$RESULTS_DIR"
 check_binary() {
   if [ ! -f "$BINARY" ]; then
     echo -e "${RED}Error: Release binary not found at ${BINARY}${NC}"
-    echo -e "${YELLOW}Build it first: cargo +nightly build --release -p pardus-cli${NC}"
+    echo -e "${YELLOW}Build it first: cargo +nightly build --release -p open-cli${NC}"
     exit 1
   fi
 }
@@ -133,7 +133,7 @@ FORMATS=(
 
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  pardus-browser benchmark suite — local reproducible${NC}"
+echo -e "${BOLD}  open-browser benchmark suite — local reproducible${NC}"
 echo -e "${BOLD}  Iterations: ${ITERATIONS}  |  Port: ${PORT}${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
@@ -282,7 +282,7 @@ echo "  File: ${RESULTS_FILE}"
 echo ""
 
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  Summary — pardus-browser (${BINARY_MB} MB)${NC}"
+echo -e "${BOLD}  Summary — open-browser (${BINARY_MB} MB)${NC}"
 echo -e "${BOLD}  Platform: ${PLATFORM}  |  Iterations: ${ITERATIONS}${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
 echo ""

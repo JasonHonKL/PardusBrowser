@@ -3,7 +3,7 @@
 ### v0.4.0 — WebSocket Full Implementation
 
 **WebSocket Support:**
-- Added `WebSocketConnection` module (`crates/pardus-core/src/websocket/connection.rs`)
+- Added `WebSocketConnection` module (`crates/open-core/src/websocket/connection.rs`)
   - Async connect with configurable timeout
   - `send_text()`, `send_binary()` for outgoing messages
   - `recv()` returns `(WebSocketFrame, Vec<u8>)` for incoming messages
@@ -11,7 +11,7 @@
   - Connection statistics tracking (frames sent/received, bytes)
   - Unique connection ID generation via URL hashing
 
-- Added `WebSocketManager` module (`crates/pardus-core/src/websocket/manager.rs`)
+- Added `WebSocketManager` module (`crates/open-core/src/websocket/manager.rs`)
   - Connection pooling with per-origin limits (`max_per_origin`)
   - Configurable security policy (`block_private_ips`, `block_loopback`)
   - CDP event bus integration for real-time notifications
@@ -32,7 +32,7 @@
   - Blocks cloud metadata: metadata.google.internal, 169.254.169.254, 100.100.100.200
   - Blocks localhost hostname
 
-- Added `ResourceType::WebSocket` to `pardus-debug` crate
+- Added `ResourceType::WebSocket` to `open-debug` crate
 
 - Dependencies added:
   - `tokio-tungstenite = "0.26"` — Async WebSocket client
@@ -149,7 +149,7 @@
 **CDP Network (Cookies):**
 - Implemented `Network.getCookies` / `Network.getAllCookies` — extracts cookies from network log Set-Cookie headers with full attribute parsing (domain, path, httpOnly, secure, sameSite, size)
 - Implemented `Network.setCookie`, `Network.deleteCookies`, `Network.clearBrowserCookies`
-- Added `url` crate dependency to pardus-cdp for URL parsing in cookie operations
+- Added `url` crate dependency to open-cdp for URL parsing in cookie operations
 
 **Cookie System (SessionStore):**
 - Fixed cookie parsing bug: removed incorrect `split(';')` on Set-Cookie header values
@@ -159,7 +159,7 @@
 - Added `session_dir()` public accessor to SessionStore
 
 **Performance:**
-- Removed unnecessary HTML re-parsing in Pardus domain click handler (reuse `page_data` result)
+- Removed unnecessary HTML re-parsing in Open domain click handler (reuse `page_data` result)
 - Removed dead HTML clone in `RuntimeDomain::evaluate_expression`
 - Fixed tab loading to use browser's actual `BrowserConfig` instead of hardcoded default
 - POST form submissions now recorded in NetworkLog

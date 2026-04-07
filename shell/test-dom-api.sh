@@ -1,5 +1,5 @@
 #!/bin/bash
-# pardus-browser DOM API test script
+# open-browser DOM API test script
 # Tests the new DOM API features: querySelector, events, extended Element API
 # Note: Requires nightly Rust (cargo +nightly)
 
@@ -8,7 +8,7 @@ set -e
 BIN="cargo +nightly run --"
 
 echo "============================================================"
-echo "  pardus-browser DOM API Test Suite"
+echo "  open-browser DOM API Test Suite"
 echo "============================================================"
 echo ""
 echo "  Testing DOM API features:"

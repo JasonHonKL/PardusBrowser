@@ -1,11 +1,11 @@
-# pardus-browser
+# open-browser
 
 A headless browser built for AI agents. No pixels, no screenshots — just structured semantic state.
 
 ```
-$ pardus-browser navigate https://example.com
+$ open-browser navigate https://example.com
 
-00:00  pardus-browser navigate https://example.com
+00:00  open-browser navigate https://example.com
 00:05  connected — parsing semantic state…
        document  [role: document]
        └── region  [role: region]
@@ -19,7 +19,7 @@ $ pardus-browser navigate https://example.com
 
 ## Why
 
-AI agents don't need screenshots. They need to know what's on a page, what they can interact with, and where they can go. `pardus-browser` fetches a URL, parses the HTML, and outputs a clean semantic tree — landmarks, headings, links, buttons, forms, and their actions — in milliseconds, not seconds.
+AI agents don't need screenshots. They need to know what's on a page, what they can interact with, and where they can go. `open-browser` fetches a URL, parses the HTML, and outputs a clean semantic tree — landmarks, headings, links, buttons, forms, and their actions — in milliseconds, not seconds.
 
 No Chromium binary. No Docker. No GPU. Just HTTP + HTML parsing.
 
@@ -52,16 +52,16 @@ From source (requires Rust nightly):
 rustup install nightly
 
 # Clone and build
-git clone https://github.com/user/pardus-browser.git
-cd pardus-browser
-cargo +nightly install --path crates/pardus-cli --features js 
+git clone https://github.com/user/open-browser.git
+cd open-browser
+cargo +nightly install --path crates/open-cli --features js 
 ```
 
 ### Docker
 
 ```bash
-docker build -t pardus-browser .
-docker run --rm pardus-browser navigate https://example.com
+docker build -t open-browser .
+docker run --rm open-browser navigate https://example.com
 ```
 
 ## Usage
@@ -70,34 +70,34 @@ docker run --rm pardus-browser navigate https://example.com
 
 ```bash
 # Default: Markdown tree
-pardus-browser navigate https://example.com
+open-browser navigate https://example.com
 
 # Raw tree format
-pardus-browser navigate https://example.com --format tree
+open-browser navigate https://example.com --format tree
 
 # JSON with navigation graph
-pardus-browser navigate https://example.com --format json --with-nav
+open-browser navigate https://example.com --format json --with-nav
 
 # Only interactive elements
-pardus-browser navigate https://example.com --interactive-only
+open-browser navigate https://example.com --interactive-only
 
 # Custom headers
-pardus-browser navigate https://api.example.com --header "Authorization: Bearer token"
+open-browser navigate https://api.example.com --header "Authorization: Bearer token"
 
 # Enable JavaScript execution (improved — problematic scripts are now filtered)
-pardus-browser navigate https://example.com --js
+open-browser navigate https://example.com --js
 
 # JS with custom wait time (ms) for async rendering
-pardus-browser navigate https://example.com --js --wait-ms 5000
+open-browser navigate https://example.com --js --wait-ms 5000
 
 # Verbose logging
-pardus-browser navigate https://example.com -v
+open-browser navigate https://example.com -v
 
 # Capture and display network request table
-pardus-browser navigate https://example.com --network-log
+open-browser navigate https://example.com --network-log
 
 # Network log with JSON output
-pardus-browser navigate https://example.com --format json --network-log
+open-browser navigate https://example.com --format json --network-log
 ```
 
 ### PDF viewing
@@ -105,11 +105,11 @@ pardus-browser navigate https://example.com --format json --network-log
 Navigate to a PDF URL the same way you'd navigate to an HTML page. The browser detects `application/pdf` responses, extracts text per-page, and builds a semantic tree with heading detection.
 
 ```bash
-pardus-browser navigate https://example.com/report.pdf
+open-browser navigate https://example.com/report.pdf
 ```
 
 ```
-00:00  pardus-browser navigate https://example.com/report.pdf
+00:00  open-browser navigate https://example.com/report.pdf
 00:01  connected — parsing semantic state…
        document  "Annual Report 2026"  [role: document]
        ├── heading (h1)  "Annual Report 2026"
@@ -125,10 +125,10 @@ Works with all output formats and subcommands:
 
 ```bash
 # JSON output
-pardus-browser navigate https://example.com/report.pdf --format json
+open-browser navigate https://example.com/report.pdf --format json
 
 # Tree format
-pardus-browser navigate https://example.com/report.pdf --format tree
+open-browser navigate https://example.com/report.pdf --format tree
 ```
 
 **How it works:**
@@ -167,7 +167,7 @@ Each interactive element has a unique ID in brackets (`[#1]`, `[#2]`, etc.) that
 **JSON** — structured data with full navigation graph:
 
 ```bash
-pardus-browser navigate https://example.com --format json --with-nav
+open-browser navigate https://example.com --format json --with-nav
 ```
 
 Returns:
@@ -219,11 +219,11 @@ Returns:
 Capture and display all network requests in a DevTools-style table:
 
 ```bash
-pardus-browser navigate https://example.com --network-log
+open-browser navigate https://example.com --network-log
 ```
 
 ```
-00:00  pardus-browser navigate https://example.com
+00:00  open-browser navigate https://example.com
 00:00  connected — parsing semantic state…
        # Network — 4 requests — 4.6 KB — 312ms total
 
@@ -249,16 +249,16 @@ Start a Chrome DevTools Protocol WebSocket server for automation:
 
 ```bash
 # Start on default host/port
-pardus-browser serve
+open-browser serve
 
 # Custom host and port
-pardus-browser serve --host 0.0.0.0 --port 9222
+open-browser serve --host 0.0.0.0 --port 9222
 
 # With inactivity timeout
-pardus-browser serve --timeout 60
+open-browser serve --timeout 60
 ```
 
-Implemented CDP domains: Browser, Target, Page, Runtime, DOM, Network, Emulation, Input, CSS, Log, Console, Security, Performance, Pardus (custom extensions)
+Implemented CDP domains: Browser, Target, Page, Runtime, DOM, Network, Emulation, Input, CSS, Log, Console, Security, Performance, Open (custom extensions)
 
 ### Knowledge Graph (site mapping)
 
@@ -266,19 +266,19 @@ Map a site's functional structure into a deterministic state graph. Nodes are vi
 
 ```bash
 # Map a site (default: depth 3, max 50 pages)
-pardus-browser map https://example.com --output kg.json
+open-browser map https://example.com --output kg.json
 
 # Shallow crawl
-pardus-browser map https://example.com --depth 1 --output kg.json
+open-browser map https://example.com --depth 1 --output kg.json
 
 # Deep crawl with higher page limit
-pardus-browser map https://example.com --depth 5 --max-pages 200 --output kg.json
+open-browser map https://example.com --depth 5 --max-pages 200 --output kg.json
 
 # Skip pagination discovery (only follow links)
-pardus-browser map https://example.com --output kg.json --no-pagination
+open-browser map https://example.com --output kg.json --no-pagination
 
 # Verbose logging
-pardus-browser map https://example.com -v --output kg.json
+open-browser map https://example.com -v --output kg.json
 ```
 
 **Output** — JSON with all view-states, transitions, and stats:
@@ -347,35 +347,35 @@ pardus-browser map https://example.com -v --output kg.json
 
 ```bash
 # Wipe everything
-pardus-browser clean
+open-browser clean
 
 # Only cookies
-pardus-browser clean --cookies-only
+open-browser clean --cookies-only
 
 # Only cache
-pardus-browser clean --cache-only
+open-browser clean --cache-only
 
 # Custom cache directory
-pardus-browser clean --cache-dir /path/to/cache
+open-browser clean --cache-dir /path/to/cache
 ```
 
 ### Tab management
 
 ```bash
 # Open a new tab (fetches page and shows summary)
-pardus-browser tab open https://example.com
+open-browser tab open https://example.com
 
 # Open with JS execution
-pardus-browser tab open https://example.com --js
+open-browser tab open https://example.com --js
 
 # List all open tabs
-pardus-browser tab list
+open-browser tab list
 
 # Show active tab info
-pardus-browser tab info
+open-browser tab info
 
 # Navigate the active tab
-pardus-browser tab navigate https://example.com/page2
+open-browser tab navigate https://example.com/page2
 ```
 
 **Note:** Tab state does not persist across CLI invocations. For persistent tab sessions, use the REPL or the CDP server.
@@ -386,41 +386,41 @@ Start a persistent interactive session where browser state (tabs, pages, cookies
 
 ```bash
 # Start REPL with defaults
-pardus-browser repl
+open-browser repl
 
 # Enable JS execution by default
-pardus-browser repl --js
+open-browser repl --js
 
 # Set default output format and JS wait time
-pardus-browser repl --format json --wait-ms 5000
+open-browser repl --format json --wait-ms 5000
 ```
 
 Once inside the REPL, the prompt shows the current URL context:
 
 ```
-pardus> visit https://example.com
+open> visit https://example.com
   document  [role: document]
   └── region  [role: region]
       ├── heading (h1)  "Example Domain"
       └── link  "Learn more"  → https://iana.org/domains/example
   0 landmarks, 1 links, 1 headings, 1 actions
 
-pardus [https://example.com]> tab open https://httpbin.org
+open [https://example.com]> tab open https://httpbin.org
 Opened tab 2: httpbin.org
 
-pardus [https://httpbin.org]> tab list
+open [https://httpbin.org]> tab list
 Tabs (2 total):
   * [2] Ready — httpbin.org — https://httpbin.org
     [1] Ready — Example Domain — https://example.com
 
-pardus [https://httpbin.org]> tab switch 1
+open [https://httpbin.org]> tab switch 1
 Switched to tab 1: https://example.com
 
-pardus [https://example.com]> click 'a'
+open [https://example.com]> click 'a'
 Navigated to: https://iana.org/domains/example
 
-pardus [https://iana.org/domains/example]> back
-pardus [https://example.com]> exit
+open [https://iana.org/domains/example]> back
+open [https://example.com]> exit
 Bye.
 ```
 
@@ -450,7 +450,7 @@ Bye.
 The `Browser` type unifies navigation, interaction, and tab management into a single API:
 
 ```rust
-use pardus_core::Browser;
+use open_core::Browser;
 
 let mut browser = Browser::new(BrowserConfig::default());
 
@@ -489,34 +489,34 @@ Interact with pages using the `interact` subcommand. Works at the HTTP level —
 
 ```bash
 # Click a link — follows href, returns new page
-pardus-browser interact https://example.com click 'a'
+open-browser interact https://example.com click 'a'
 
 # Click by element ID — easier for AI agents
-pardus-browser interact https://example.com click-id 1
+open-browser interact https://example.com click-id 1
 
 # Click a submit button — finds enclosing form, submits it
-pardus-browser interact https://example.com click 'button[type="submit"]'
+open-browser interact https://example.com click 'button[type="submit"]'
 
 # Type into a field (returns the field state)
-pardus-browser interact https://example.com type 'input[name="q"]' 'search query'
+open-browser interact https://example.com type 'input[name="q"]' 'search query'
 
 # Type by element ID — easier for AI agents
-pardus-browser interact https://example.com type-id 3 'search query'
+open-browser interact https://example.com type-id 3 'search query'
 
 # Submit a form with field values
-pardus-browser interact https://example.com submit 'form' --field 'q=rust+language'
+open-browser interact https://example.com submit 'form' --field 'q=rust+language'
 
 # Wait for a CSS selector to appear (with timeout)
-pardus-browser interact https://example.com wait '.result-list' --timeout-ms 5000
+open-browser interact https://example.com wait '.result-list' --timeout-ms 5000
 
 # Scroll — detects URL pagination (?page=, ?offset=, /page/N)
-pardus-browser interact 'https://example.com/news?page=1' scroll --direction down
+open-browser interact 'https://example.com/news?page=1' scroll --direction down
 
 # JSON output for the result page
-pardus-browser interact https://example.com click 'a' --format json
+open-browser interact https://example.com click 'a' --format json
 
 # Enable JS execution before interaction
-pardus-browser interact https://example.com wait '.dynamic-content' --js --wait-ms 3000
+open-browser interact https://example.com wait '.dynamic-content' --js --wait-ms 3000
 ```
 
 **How interactions work:**
@@ -533,23 +533,23 @@ pardus-browser interact https://example.com wait '.dynamic-content' --js --wait-
 ## Architecture
 
 ```
-pardus-browser
-├── crates/pardus-core    Core library — Browser type, HTML parsing, semantic tree, navigation graph, interaction, tabs
-├── crates/pardus-debug   Network debugger — request recording, subresource discovery, table output
-├── crates/pardus-cdp     CDP WebSocket server — Chrome DevTools Protocol for automation (14 domains)
-├── crates/pardus-kg      Knowledge Graph — BFS site crawler, state fingerprinting, transition discovery
-└── crates/pardus-cli     CLI binary
+open-browser
+├── crates/open-core    Core library — Browser type, HTML parsing, semantic tree, navigation graph, interaction, tabs
+├── crates/open-debug   Network debugger — request recording, subresource discovery, table output
+├── crates/open-cdp     CDP WebSocket server — Chrome DevTools Protocol for automation (14 domains)
+├── crates/open-kg      Knowledge Graph — BFS site crawler, state fingerprinting, transition discovery
+└── crates/open-cli     CLI binary
 ```
 
-**pardus-core** — The engine. The `Browser` type is the main entry point — it owns the HTTP client, tab state, and provides navigation + interaction as a single cohesive API. Internally, it fetches pages via `reqwest`, parses HTML with `scraper`, and builds semantic trees mapping ARIA roles and interactive states. PDF URLs are detected by content-type and extracted into semantic trees via `pdf-extract`. Provides page interaction (click, type, submit, wait, scroll) with automatic tab updates on navigation. Includes tab management, history navigation, session persistence (cookies, headers, localStorage), and optional JavaScript execution via deno_core (enabled by default). Outputs Markdown, tree, or JSON.
+**open-core** — The engine. The `Browser` type is the main entry point — it owns the HTTP client, tab state, and provides navigation + interaction as a single cohesive API. Internally, it fetches pages via `reqwest`, parses HTML with `scraper`, and builds semantic trees mapping ARIA roles and interactive states. PDF URLs are detected by content-type and extracted into semantic trees via `pdf-extract`. Provides page interaction (click, type, submit, wait, scroll) with automatic tab updates on navigation. Includes tab management, history navigation, session persistence (cookies, headers, localStorage), and optional JavaScript execution via deno_core (enabled by default). Outputs Markdown, tree, or JSON.
 
-**pardus-debug** — Network debugging. Records all HTTP requests to a shared `NetworkLog`, discovers subresources from parsed HTML (stylesheets, scripts, images, fonts, media), fetches them in parallel, and formats DevTools-style request tables.
+**open-debug** — Network debugging. Records all HTTP requests to a shared `NetworkLog`, discovers subresources from parsed HTML (stylesheets, scripts, images, fonts, media), fetches them in parallel, and formats DevTools-style request tables.
 
-**pardus-cdp** — Chrome DevTools Protocol server. Exposes a WebSocket endpoint for browser automation with 14 domain handlers (Browser, Target, Page, Runtime, DOM, Network, Emulation, Input, CSS, Log, Console, Security, Performance, Pardus). Includes event bus, target management, message routing, and session lifecycle.
+**open-cdp** — Chrome DevTools Protocol server. Exposes a WebSocket endpoint for browser automation with 14 domain handlers (Browser, Target, Page, Runtime, DOM, Network, Emulation, Input, CSS, Log, Console, Security, Performance, Open). Includes event bus, target management, message routing, and session lifecycle.
 
-**pardus-kg** — Knowledge Graph. BFS site crawler that builds a deterministic state map: nodes are view-states identified by composite fingerprints (semantic tree structure hash + resource URL set hash + normalized URL), edges are verified transitions (link clicks, hash navigation, pagination). Produces a JSON graph suitable for AI agent consumption — an agent can query the graph to understand what states exist and how to reach them without trial-and-error navigation.
+**open-kg** — Knowledge Graph. BFS site crawler that builds a deterministic state map: nodes are view-states identified by composite fingerprints (semantic tree structure hash + resource URL set hash + normalized URL), edges are verified transitions (link clicks, hash navigation, pagination). Produces a JSON graph suitable for AI agent consumption — an agent can query the graph to understand what states exist and how to reach them without trial-and-error navigation.
 
-**pardus-cli** — The `pardus-browser` command-line tool. Provides `navigate`, `interact`, `map`, `tab`, `serve`, `repl`, and `clean` subcommands. All commands use the unified `Browser` type.
+**open-cli** — The `open-browser` command-line tool. Provides `navigate`, `interact`, `map`, `tab`, `serve`, `repl`, and `clean` subcommands. All commands use the unified `Browser` type.
 
 ## Semantic roles detected
 

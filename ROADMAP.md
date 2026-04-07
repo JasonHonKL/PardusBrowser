@@ -1,4 +1,4 @@
-# Pardus Browser Roadmap
+# Open Browser Roadmap
 
 **Version:** 0.4.0-dev | **Branch:** dev/roadmap | **Updated:** April 4, 2026
 
@@ -20,7 +20,7 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 | **Network** | DevTools-style request table, parallel subresource fetch, full request/response logging, HAR 1.2 export, CSS/JS coverage reporting |
 | **SSE** | Streaming parser (HTML Living Standard), async client with auto-reconnect, thread-safe manager, JS EventSource API, 4 deno_core ops, SSRF validation |
 | **WebSocket** | WS/WSS via tokio-tungstenite, connection pooling, per-origin limits, CDP events |
-| **CDP Server** | WebSocket endpoint on ws://127.0.0.1:9222, 14 domain handlers (Browser, Target, Page, DOM, Network, Runtime, Input, CSS, Console, Log, Security, Emulation, Performance, Pardus), event bus, node mapping |
+| **CDP Server** | WebSocket endpoint on ws://127.0.0.1:9222, 14 domain handlers (Browser, Target, Page, DOM, Network, Runtime, Input, CSS, Console, Log, Security, Emulation, Performance, Open), event bus, node mapping |
 | **Knowledge Graph** | BFS crawler, blake3 fingerprinting, transition discovery (links/hash/pagination), JSON graph output |
 | **Frames** | Recursive iframe/frame parsing with depth limits, sandbox token awareness, iframe-aware semantic tree |
 | **Shadow DOM** | Shadow boundary piercing (query_selector_deep, query_selector_all_deep) |
@@ -48,7 +48,7 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 - [x] Cross-platform — dashboard is pure HTML/CSS (no OS webview dependency for primary view); CAPTCHA popup uses OS webview only when needed
 
 **Phase 1.5 — Webview ↔ Headless Browser Sync (current)**
-- [x] Click interceptor — JS injected into OS webview captures clicks on links, buttons, inputs and forwards to Pardus headless browser via Tauri events
+- [x] Click interceptor — JS injected into OS webview captures clicks on links, buttons, inputs and forwards to Open headless browser via Tauri events
 - [x] CSS selector generator — produces unique selectors for any clicked DOM element (ID, name, type, nth-of-type)
 - [x] Form input sync — debounced `input` event tracking syncs typed values to headless browser form state
 - [x] Select/checkbox/radio change tracking — `change` events forwarded as `select`/`toggle` CDP actions
@@ -56,7 +56,7 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 - [x] Navigation sync — when headless browser navigates after a forwarded action, OS webview is updated to the new URL
 - [x] Href fallback — when CSS selector doesn't match in headless browser, falls back to direct URL navigation
 - [x] Action log events — `webview-action-log` Tauri events emitted for frontend action log integration
-- [x] Pardus UI guard — toolbar and challenge banner clicks are not intercepted
+- [x] Open UI guard — toolbar and challenge banner clicks are not intercepted
 
 **Phase 2 — Multi-Agent Dashboard (current)**
 - [x] Multiple concurrent agent instances — spawn/manage N agents in one window
@@ -73,7 +73,7 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 **Phase 3 — Rendered View (Optional)**
 - [ ] Rendered page tab — OS webview shows actual page pixels (WKWebView on macOS, WebKitGTK on Linux, WebView2 on Windows)
 - [ ] Split view — semantic tree on left, rendered pixels on right
-- [ ] Screenshot capture — use pardus-core screenshot feature (chromiumoxide) for pixel-perfect captures
+- [ ] Screenshot capture — use open-core screenshot feature (chromiumoxide) for pixel-perfect captures
 
 **Architecture:**
 ```
@@ -132,9 +132,9 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 
 - [ ] **Shadow DOM in JS runtime** — Wire shadow boundary piercing into deno_core ops; currently only works in Rust-side parsing
 - [ ] **External script execution** — Fetch and execute `<script src="...">` with same timeout/filtering as inline scripts
-- [ ] **fetch/XHR in JS** — Full `window.fetch` / `XMLHttpRequest` implementation that routes through pardus-core's HTTP client with cache and SSRF enforcement
+- [ ] **fetch/XHR in JS** — Full `window.fetch` / `XMLHttpRequest` implementation that routes through open-core's HTTP client with cache and SSRF enforcement
 - [ ] **Cookie API in JS** — `document.cookie` getter/setter wired to the session cookie store
-- [ ] **localStorage/sessionStorage in JS** — Persistent and per-session storage backed by pardus-core session store
+- [ ] **localStorage/sessionStorage in JS** — Persistent and per-session storage backed by open-core session store
 - [ ] **MutationObserver shim** — Allow JS to observe DOM changes for SPA reactivity detection
 - [x] **Event dispatch** — Allow agents to fire arbitrary DOM events (change, input, submit, custom) for frameworks that listen on native events
 
@@ -158,11 +158,11 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 ### CDP Completeness
 
 - [x] **DOM manipulation** — Implement stubbed methods: setNodeValue, setNodeName, removeAttribute, copyTo, moveTo, undo/redo
-- [ ] **Input event dispatch** — Wire mouse/keyboard events through pardus-core interaction system (currently stubbed)
+- [ ] **Input event dispatch** — Wire mouse/keyboard events through open-core interaction system (currently stubbed)
 - [ ] **File upload** — Implement DOM.setFileInputFiles for `<input type="file">` handling
 - [ ] **Network interception in CDP** — Fetch.enable / Fetch.requestPaused for request/response modification over CDP
 - [ ] **Runtime console API** — Full console.log/warn/error capture with argument serialization
-- [ ] **Coverage in CDP** — CSS.stopRuleUsageTracking, Pardus.getCoverage return real data (currently only CLI)
+- [ ] **Coverage in CDP** — CSS.stopRuleUsageTracking, Open.getCoverage return real data (currently only CLI)
 
 ### Performance & Reliability
 
@@ -182,7 +182,7 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 
 - [ ] **Python bindings** — PyO3 wrapper for Python agents
 - [ ] **Node.js bindings** — N-API for JavaScript agents
-- [ ] **Library crate API** — Stable public Rust API (`pardus-core` as a library) with `no_std`-friendly semantic types for embedding
+- [ ] **Library crate API** — Stable public Rust API (`open-core` as a library) with `no_std`-friendly semantic types for embedding
 - [ ] **Webhook notifications** — POST page state to a configurable URL on navigation, interaction, or error events
 
 ### Developer Experience
@@ -191,7 +191,7 @@ Core engine, CLI, and all major subsystems are stable. Summary of shipped featur
 - [ ] **Visual regression** — Diff screenshots for testing
 - [ ] **REPL improvements** — Auto-completion, syntax highlighting, multi-line input
 - [ ] **Structured error types** — Typed errors with codes, recovery hints, and machine-readable JSON output
-- [ ] **Configuration file** — `pardus.toml` for persistent settings (proxy, headers, sandbox, CSP) instead of CLI flags only
+- [ ] **Configuration file** — `open.toml` for persistent settings (proxy, headers, sandbox, CSP) instead of CLI flags only
 - [ ] **Plugin system** — Loadable WASM or shared-library plugins for custom extractors, interceptors, or output formatters
 - [ ] **Benchmarking harness** — Automated perf regression tracking across releases (page parse time, JS execution, memory)
 

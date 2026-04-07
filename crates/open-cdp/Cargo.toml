@@ -1,0 +1,32 @@
+[package]
+name = "open-cdp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+open-core = { path = "../open-core", features = ["tls-pinning", "js"] }
+open-debug = { path = "../open-debug" }
+scraper = "0.22"
+tokio = { workspace = true }
+tokio-tungstenite = "0.26"
+futures-util = "0.3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+rquest = { workspace = true }
+anyhow = { workspace = true }
+url = "2"
+parking_lot = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+
+[features]
+default = []
+screenshot = ["open-core/screenshot"]
+tls-pinning = ["open-core/tls-pinning"]
+
+[dev-dependencies]
+mockito = "1"

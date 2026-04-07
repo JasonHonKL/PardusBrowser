@@ -94,7 +94,7 @@ export default function App() {
               </>
             ) : (
               <div className="welcome">
-                <h1>Pardus Browser</h1>
+                <h1>Open Browser</h1>
                 <p>Enter a URL to start browsing</p>
               </div>
             )}

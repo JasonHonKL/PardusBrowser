@@ -31,7 +31,7 @@ export function NavBar({ onNavigate, loading }: Props) {
 
   return (
     <nav className="navbar">
-      <div className="navbar-brand">Pardus</div>
+      <div className="navbar-brand">Open</div>
       <form className="navbar-form" onSubmit={handleSubmit}>
         <button type="button" className="btn-icon" onClick={handleReload} title="Reload" disabled={loading}>
           &#x21bb;

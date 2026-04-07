@@ -1,8 +1,8 @@
 {
-  "name": "pardus-browser-compare",
+  "name": "open-browser-compare",
   "version": "1.0.0",
   "private": true,
-  "description": "Comparison benchmarks for pardus-browser vs headless browsers",
+  "description": "Comparison benchmarks for open-browser vs headless browsers",
   "scripts": {
     "puppeteer": "node puppeteer.mjs",
     "playwright": "node playwright.mjs",

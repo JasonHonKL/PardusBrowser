@@ -1,0 +1,28 @@
+[package]
+name = "open-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "open-browser"
+path = "src/main.rs"
+
+[dependencies]
+open-core = { path = "../open-core", default-features = false }
+open-cdp = { path = "../open-cdp", default-features = false }
+open-debug = { path = "../open-debug" }
+open-kg = { path = "../open-kg" }
+clap = { version = "4", features = ["derive"] }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+dirs = "6"
+rustyline = "15"
+shell-words = "1"
+
+[features]
+default = []
+js = ["open-core/js"]
+screenshot = ["open-core/screenshot"]

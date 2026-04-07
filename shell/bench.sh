@@ -1,8 +1,8 @@
 #!/bin/bash
-# pardus-browser benchmark — RAM + Cold Start + E2E + JSON
+# open-browser benchmark — RAM + Cold Start + E2E + JSON
 set -euo pipefail
 
-BINARY="target/release/pardus-browser"
+BINARY="target/release/open-browser"
 URL="https://example.com"
 ITERATIONS=10
 
@@ -44,7 +44,7 @@ run_test() {
 }
 
 echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  pardus-browser benchmark suite${NC}"
+echo -e "${BOLD}  open-browser benchmark suite${NC}"
 echo -e "${BOLD}  Target: $URL  |  Iterations: $ITERATIONS${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
 echo ""
@@ -54,7 +54,7 @@ echo -e "${CYAN}[0] Binary Size${NC}"
 echo "─────────────────────────────────"
 REL_SIZE=$(stat -f%z "$BINARY")
 REL_MB=$(echo "scale=2; $REL_SIZE / 1048576" | bc)
-DBG_SIZE=$(stat -f%z target/debug/pardus-browser)
+DBG_SIZE=$(stat -f%z target/debug/open-browser)
 DBG_MB=$(echo "scale=2; $DBG_SIZE / 1048576" | bc)
 echo "  Release: ${REL_MB} MB"
 echo "  Debug:   ${DBG_MB} MB"

@@ -1,12 +1,12 @@
 #!/bin/bash
-# pardus-browser comparison benchmarks
-# Compares pardus-browser against curl, w3m, Puppeteer, and Playwright
+# open-browser comparison benchmarks
+# Compares open-browser against curl, w3m, Puppeteer, and Playwright
 # Usage: ./bench/compare_bench.sh [iterations] [port]
 set -euo pipefail
 
 ITERATIONS="${1:-10}"
 PORT="${2:-18899}"
-BINARY="target/release/pardus-browser"
+BINARY="target/release/open-browser"
 SITE_DIR="$(dirname "$0")/../bench/site"
 COMPARE_DIR="$(dirname "$0")/../bench/compare"
 RESULTS_DIR="$(dirname "$0")/../bench/results"
@@ -90,7 +90,7 @@ tool_available() {
 
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  pardus-browser comparison benchmarks${NC}"
+echo -e "${BOLD}  open-browser comparison benchmarks${NC}"
 echo -e "${BOLD}  Iterations: ${ITERATIONS}  |  Port: ${PORT}${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
@@ -178,29 +178,29 @@ else
   echo ""
 fi
 
-# ── pardus-browser ──
+# ── open-browser ──
 if [ -f "$BINARY" ]; then
-  echo -e "${CYAN}[4] pardus-browser (semantic tree)${NC}"
-  PARDUS_JSON="{"
+  echo -e "${CYAN}[4] open-browser (semantic tree)${NC}"
+  OPEN_JSON="{"
   for page in "${PAGES[@]}"; do
     url="${BENCH_URL}/${page}"
     echo -ne "  ${page} ..."
-    result=$(run_tool_bench "pardus-browser" "$url" "$BINARY" navigate --format json)
+    result=$(run_tool_bench "open-browser" "$url" "$BINARY" navigate --format json)
     avg=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin)['avg'])")
     echo -e " avg:${avg}ms"
-    PARDUS_JSON="${PARDUS_JSON}\"${page}\":${result},"
+    OPEN_JSON="${OPEN_JSON}\"${page}\":${result},"
   done
-  PARDUS_JSON="${PARDUS_JSON%,}}"
+  OPEN_JSON="${OPEN_JSON%,}}"
   COMPARISON_JSON=$(echo "$COMPARISON_JSON" | python3 -c "
 import sys, json
 d = json.loads(sys.stdin.read())
-d['pardus-browser'] = json.loads('''${PARDUS_JSON}''')
+d['open-browser'] = json.loads('''${OPEN_JSON}''')
 print(json.dumps(d))
 " 2>/dev/null)
   echo ""
 else
-  echo -e "${YELLOW}[4] pardus-browser binary not found — skipping${NC}"
-  echo -e "${DIM}  Build it: cargo +nightly build --release -p pardus-cli${NC}"
+  echo -e "${YELLOW}[4] open-browser binary not found — skipping${NC}"
+  echo -e "${DIM}  Build it: cargo +nightly build --release -p open-cli${NC}"
   echo ""
 fi
 

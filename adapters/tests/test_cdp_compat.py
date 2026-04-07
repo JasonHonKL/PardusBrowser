@@ -2,7 +2,7 @@
 
 Tests verify that the CDP server correctly responds to the methods
 that Playwright and Puppeteer use during their connection and page lifecycle.
-These tests can be run against a running pardus-browser serve instance.
+These tests can be run against a running open-browser serve instance.
 """
 
 import json
@@ -48,7 +48,7 @@ def get_ws_url() -> str:
         data = json.loads(req.read().decode())
         return data.get("webSocketDebuggerUrl", "")
     except Exception as e:
-        print(f"Cannot connect to PardusBrowser at {CDP_URL}: {e}")
+        print(f"Cannot connect to OpenBrowser at {CDP_URL}: {e}")
         sys.exit(1)
 
 
@@ -357,48 +357,48 @@ def test_css_get_inline_styles():
     print("  [PASS] CSS.getInlineStylesForNode")
 
 
-def test_pardus_semantic_tree():
-    """Test Pardus.semanticTree (custom extension)."""
+def test_open_semantic_tree():
+    """Test Open.semanticTree (custom extension)."""
     ws_url = get_ws_url()
-    result = cdp_send(ws_url, "Pardus.semanticTree")
+    result = cdp_send(ws_url, "Open.semanticTree")
     if "error" in result:
-        print(f"  [SKIP] Pardus.semanticTree: {result['error']}")
+        print(f"  [SKIP] Open.semanticTree: {result['error']}")
         return
     assert "result" in result
     tree = result["result"].get("semanticTree", {})
     assert "root" in tree
-    print("  [PASS] Pardus.semanticTree")
+    print("  [PASS] Open.semanticTree")
 
 
-def test_pardus_detect_actions():
-    """Test Pardus.detectActions (custom extension)."""
+def test_open_detect_actions():
+    """Test Open.detectActions (custom extension)."""
     ws_url = get_ws_url()
-    result = cdp_send(ws_url, "Pardus.detectActions")
+    result = cdp_send(ws_url, "Open.detectActions")
     if "error" in result:
-        print(f"  [SKIP] Pardus.detectActions: {result['error']}")
+        print(f"  [SKIP] Open.detectActions: {result['error']}")
         return
     assert "result" in result
     actions = result["result"].get("actions", [])
     assert isinstance(actions, list)
-    print(f"  [PASS] Pardus.detectActions ({len(actions)} actions found)")
+    print(f"  [PASS] Open.detectActions ({len(actions)} actions found)")
 
 
-def test_pardus_navigation_graph():
-    """Test Pardus.getNavigationGraph (custom extension)."""
+def test_open_navigation_graph():
+    """Test Open.getNavigationGraph (custom extension)."""
     ws_url = get_ws_url()
-    result = cdp_send(ws_url, "Pardus.getNavigationGraph")
+    result = cdp_send(ws_url, "Open.getNavigationGraph")
     if "error" in result:
-        print(f"  [SKIP] Pardus.getNavigationGraph: {result['error']}")
+        print(f"  [SKIP] Open.getNavigationGraph: {result['error']}")
         return
     assert "result" in result
     graph = result["result"].get("navigationGraph", {})
     assert "internal_links" in graph
     assert "external_links" in graph
-    print("  [PASS] Pardus.getNavigationGraph")
+    print("  [PASS] Open.getNavigationGraph")
 
 
 def main():
-    print(f"PardusBrowser CDP Compatibility Test Suite")
+    print(f"OpenBrowser CDP Compatibility Test Suite")
     print(f"Target: {CDP_URL}")
     print()
 
@@ -432,9 +432,9 @@ def main():
         test_emulation_set_device_metrics,
         test_emulation_set_user_agent,
         test_css_get_inline_styles,
-        test_pardus_semantic_tree,
-        test_pardus_detect_actions,
-        test_pardus_navigation_graph,
+        test_open_semantic_tree,
+        test_open_detect_actions,
+        test_open_navigation_graph,
     ]
 
     passed = 0

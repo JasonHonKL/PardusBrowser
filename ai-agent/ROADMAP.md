@@ -1,6 +1,6 @@
-# Pardus Browser Agent - Roadmap
+# Open Browser Agent - Roadmap
 
-A TypeScript AI agent that uses pardus-browser for web navigation via OpenAI function calling.
+A TypeScript AI agent that uses open-browser for web navigation via OpenAI function calling.
 
 ---
 
@@ -113,7 +113,7 @@ A TypeScript AI agent that uses pardus-browser for web navigation via OpenAI fun
 - [ ] **Wait conditions** - Wait for element, text, or custom condition
 - [ ] **Infinite scroll** - Auto-detect and scroll pagination
 - [ ] **Download handling** - File download support
-- [ ] **PDF extraction** - Native PDF text extraction via pardus-browser
+- [ ] **PDF extraction** - Native PDF text extraction via open-browser
 
 ### Authentication
 - [ ] **Credential store** - Secure storage for login credentials

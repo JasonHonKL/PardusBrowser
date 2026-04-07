@@ -1,13 +1,13 @@
 [workspace]
 members = [
-    "crates/pardus-core",
-    "crates/pardus-cdp",
-    "crates/pardus-challenge",
-    "crates/pardus-cli",
-    "crates/pardus-debug",
-    "crates/pardus-kg",
-    "crates/pardus-server",
-    "crates/pardus-tauri/src-tauri",
+    "crates/open-core",
+    "crates/open-cdp",
+    "crates/open-challenge",
+    "crates/open-cli",
+    "crates/open-debug",
+    "crates/open-kg",
+    "crates/open-server",
+    "crates/open-tauri/src-tauri",
 ]
 resolver = "2"
 

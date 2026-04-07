@@ -1,0 +1,33 @@
+{
+  "name": "open-browser-agent",
+  "version": "0.1.0",
+  "description": "AI agent using open-browser for web navigation",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:test": "tsc -p tsconfig.test.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "npm run build:test && node --test dist/__tests__/**/*.test.js",
+    "test:unit": "npm run build:test && node --test dist/__tests__/**/*.test.js",
+    "test:watch": "npm run build:test && node --test --watch dist/__tests__/**/*.test.js",
+    "test:coverage": "npm run build:test && node --test --experimental-test-coverage dist/__tests__/**/*.test.js",
+    "lint": "tsc --noEmit",
+    "lint:test": "tsc -p tsconfig.test.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "openai": "^4.28.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

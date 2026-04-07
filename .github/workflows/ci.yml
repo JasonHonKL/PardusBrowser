@@ -57,13 +57,13 @@ jobs:
           node-version: '20'
       - name: Install ai-agent dependencies
         run: npm ci
-        working-directory: ai-agent/pardus-browser
+        working-directory: ai-agent/open-browser
       - name: Typecheck ai-agent
         run: npm run lint
-        working-directory: ai-agent/pardus-browser
+        working-directory: ai-agent/open-browser
       - name: Test ai-agent
         run: npm test
-        working-directory: ai-agent/pardus-browser
+        working-directory: ai-agent/open-browser
 
   security-audit:
     name: security audit

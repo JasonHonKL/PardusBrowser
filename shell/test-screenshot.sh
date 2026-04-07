@@ -1,5 +1,5 @@
 #!/bin/bash
-# pardus-browser screenshot capture test
+# open-browser screenshot capture test
 # Tests the screenshot module (feature-gated behind `screenshot`)
 # Requires: Google Chrome or Chromium installed on the system
 set -euo pipefail
@@ -56,7 +56,7 @@ check_output() {
 
 echo ""
 echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  pardus-browser screenshot capture tests${NC}"
+echo -e "${BOLD}  open-browser screenshot capture tests${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -83,10 +83,10 @@ echo -e "  ${GREEN}Found: ${CHROME_PATH}${NC}"
 echo ""
 
 # ── Step 1: Compile with screenshot feature ──
-echo -e "${CYAN}[1] Compiling pardus-core with screenshot feature${NC}"
+echo -e "${CYAN}[1] Compiling open-core with screenshot feature${NC}"
 echo "─────────────────────────────────"
 
-COMPILE_OUTPUT=$(cargo +nightly build -p pardus-core --features screenshot 2>&1)
+COMPILE_OUTPUT=$(cargo +nightly build -p open-core --features screenshot 2>&1)
 if [ $? -eq 0 ]; then
     echo -e "  ${GREEN}Compiled successfully${NC}"
 else
@@ -100,25 +100,25 @@ echo ""
 echo -e "${CYAN}[2] Running screenshot integration tests${NC}"
 echo "─────────────────────────────────"
 
-TEST_OUTPUT_DIR="/tmp/pardus-screenshot-test"
+TEST_OUTPUT_DIR="/tmp/open-screenshot-test"
 rm -rf "$TEST_OUTPUT_DIR"
 mkdir -p "$TEST_OUTPUT_DIR"
 
 # Write a one-off integration test binary
-TEST_SRC="/tmp/pardus_screenshot_test.rs"
+TEST_SRC="/tmp/open_screenshot_test.rs"
 cat > "$TEST_SRC" << 'RUSTEOF'
 //! Screenshot integration test — exercises capture_full_page and capture_element.
 //! Run via: shell/test-screenshot.sh
 
 use std::path::PathBuf;
 use std::time::Duration;
-use pardus_core::screenshot::{ScreenshotHandle, ScreenshotOptions, ScreenshotFormat};
+use open_core::screenshot::{ScreenshotHandle, ScreenshotOptions, ScreenshotFormat};
 
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let chrome_path = args.get(1).cloned().map(PathBuf::from);
-    let output_dir = args.get(2).cloned().unwrap_or_else(|| "/tmp/pardus-screenshot-test".into());
+    let output_dir = args.get(2).cloned().unwrap_or_else(|| "/tmp/open-screenshot-test".into());
 
     println!("  [setup] Creating ScreenshotHandle...");
     let handle = ScreenshotHandle::new(chrome_path, 1280, 720);
@@ -250,22 +250,22 @@ async fn main() {
 RUSTEOF
 
 # Run the test via cargo with --bin trick: we create a temp binary crate
-TEST_CRATE_DIR="/tmp/pardus-screenshot-test-crate"
+TEST_CRATE_DIR="/tmp/open-screenshot-test-crate"
 rm -rf "$TEST_CRATE_DIR"
 mkdir -p "$TEST_CRATE_DIR/src"
 cp "$TEST_SRC" "$TEST_CRATE_DIR/src/main.rs"
 
-# Get pardus-core path (relative from project root)
-CORE_PATH="$(pwd)/crates/pardus-core"
+# Get open-core path (relative from project root)
+CORE_PATH="$(pwd)/crates/open-core"
 
 cat > "$TEST_CRATE_DIR/Cargo.toml" << TOMLEOF
 [package]
-name = "pardus-screenshot-test"
+name = "open-screenshot-test"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pardus-core = { path = "${CORE_PATH}", features = ["screenshot"] }
+open-core = { path = "${CORE_PATH}", features = ["screenshot"] }
 tokio = { version = "1", features = ["full"] }
 TOMLEOF
 
@@ -278,7 +278,7 @@ if [ $? -ne 0 ]; then
 else
     echo -e "  ${GREEN}Test binary built${NC}"
     echo ""
-    TEST_BIN="$TEST_CRATE_DIR/target/release/pardus-screenshot-test"
+    TEST_BIN="$TEST_CRATE_DIR/target/release/open-screenshot-test"
     if [ -f "$TEST_BIN" ]; then
         echo -e "${CYAN}[3] Executing screenshot tests${NC}"
         echo "─────────────────────────────────"
