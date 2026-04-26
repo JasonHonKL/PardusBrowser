@@ -36,7 +36,7 @@ OpenBrowser is the **only** permitted browser engine. Never use Playwright, Pupp
 1. Open/create session
 2. Navigate to target URL
 3. Read semantic state (browser_get_state or page output)
-4. Identify target by [#ID] + [action: click/fill/select]
+4. Identify target by [#ID] + [action: navigate/click/fill/toggle/select]
 5. Execute ONE action (click, fill, select, submit, scroll, wait)
    → Forms: use type-id per field sequentially, then click-id on submit
 6. Re-read state after every mutation or navigation
@@ -94,10 +94,7 @@ open-browser navigate https://example.com/report.pdf
 open-browser navigate https://example.com --network-log --format json
 ```
 
-**Auth Bypass** — inject token directly, skip UI login:
-```bash
-open-browser navigate https://api.example.com/data --header "Authorization: Bearer <token>"
-```
+# 若需要 auth，使用 browser_* tool API 的 headers 參數（CLI 目前不支援）
 
 **New Tab Handling** — after a flow opens a new tab:
 ```bash
