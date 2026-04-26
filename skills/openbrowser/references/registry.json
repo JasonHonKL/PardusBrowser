@@ -1,0 +1,52 @@
+{
+  "name": "openbrowser",
+  "description": "Headless browser for AI agents - semantic tree output, page interaction, site mapping",
+  "author": "Chris Engelhard <chris@chrisengelhard.nl>",
+  "references": [
+    {
+      "file": "installation.md",
+      "title": "Installation",
+      "description": "Build from source, system dependencies, Arch Linux extras, Docker, troubleshooting"
+    },
+    {
+      "file": "cli-reference.md",
+      "title": "CLI Reference",
+      "description": "All subcommands, flags, output formats, and usage examples"
+    },
+    {
+      "file": "testing-patterns.md",
+      "title": "Testing Patterns",
+      "description": "Playwright to open-browser translation table, assertion recipes, workflow templates"
+    },
+    {
+      "file": "repl-and-cdp.md",
+      "title": "REPL and CDP Server",
+      "description": "Interactive REPL commands, CDP WebSocket server, when to use each"
+    },
+    {
+      "file": "knowledge-graph.md",
+      "title": "Knowledge Graph",
+      "description": "Site mapping, BFS crawl, state fingerprinting, transition types, coverage testing"
+    },
+    {
+      "file": "semantic-roles.md",
+      "title": "Semantic Roles",
+      "description": "HTML element to ARIA role mapping, action types, element ID system"
+    },
+    {
+      "file": "programmatic-usage.md",
+      "title": "Programmatic Usage",
+      "description": "Rust API, Browser type, navigation, interaction, tab management"
+    },
+    {
+      "file": "examples.md",
+      "title": "Examples",
+      "description": "End-to-end examples: navigation, forms, REPL, CDP, PDF, smoke tests, SEO audit"
+    },
+    {
+      "file": "troubleshooting.md",
+      "title": "Troubleshooting",
+      "description": "Build issues, runtime errors, element IDs, form submission, JS execution, performance"
+    }
+  ]
+}
