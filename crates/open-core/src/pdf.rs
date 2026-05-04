@@ -644,6 +644,23 @@ fn is_heading_candidate(text: &str, is_first: bool) -> bool {
         return false;
     }
 
+    let lower = trimmed.to_lowercase();
+
+    if lower.starts_with("figure ") || lower.starts_with("fig.") || lower.starts_with("table ") {
+        return false;
+    }
+
+    if trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("www.")
+    {
+        return false;
+    }
+
+    if trimmed.contains('@') && !trimmed.contains(' ') {
+        return false;
+    }    
+
     let len = trimmed.len();
 
     if is_first && len >= 3 {
